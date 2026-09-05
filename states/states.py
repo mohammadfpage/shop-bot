@@ -67,6 +67,18 @@ class TicketStates(StatesGroup):
     admin_reply = State()           # admin is typing a reply to a ticket
 
 
+# ─── Product Price Editing (Inline Panel) ──────────────────────────
+class ProductState(StatesGroup):
+    """FSM for inline price editing panel.
+
+    Flow:
+        1. Admin taps a product button → product detail shown
+        2. Admin taps "ویرایش قیمت" → state: waiting_for_price
+        3. Admin sends new price text → DB updated, message edited to success
+    """
+    waiting_for_price = State()  # admin is typing the new USD price
+
+
 # ─── Admin Panel ─────────────────────────────────────────────────────
 class AdminStates(StatesGroup):
     """Admin-only FSM for price editing, broadcast, etc."""

@@ -2,26 +2,33 @@
 Telegram E-Commerce & Service Bot — main entry point.
 
 Architecture (Render.com Web Service):
-    • FastAPI binds to the required $PORT and keeps the dyno alive.
-    • Lifespan context manager starts three concurrent tasks:
-        1.  PostgreSQL init
-        2.  Background rate-fetcher (BrsApi, every 5 min)
-        3.  aiogram long-polling
-    • A /health endpoint is available for external uptime pings.
+    • FastAPI binds to the required $PORT and keeps the Render instance alive.
+    • Lifespan context manager:
+        1.  Initializes PostgreSQL
+        2.  Starts background rate-fetcher (BrsApi, every 5 min)
+        3.  Registers the aiogram webhook on Telegram's servers
+        4.  Exposes a POST /webhook endpoint that receives Telegram updates
+    • A /health and / endpoint are available for external uptime pings.
+    • On shutdown, the webhook is removed from Telegram.
 
 Usage:
-    python bot.py           # starts FastAPI + polling
+    python bot.py   # starts FastAPI in webhook mode (Render / any PaaS)
 
 Environment variables:
-    BOT_TOKEN, ADMIN_IDS, DATABASE_URL, WEBHOOK_MODE, WEBHOOK_HOST,
-    WEBHOOK_PORT, WEBHOOK_BASE_URL
+    BOT_TOKEN          — Telegram Bot API token
+    ADMIN_IDS          — comma-separated Telegram user IDs
+    DATABASE_URL       — PostgreSQL connection string (Neon.tech)
+    WEBHOOK_BASE_URL   — public HTTPS URL (e.g. https://your-app.onrender.com)
+    WEBHOOK_SECRET     — (optional) secret token for webhook request validation
+    WEBHOOK_HOST       — bind address (default 0.0.0.0)
+    WEBHOOK_PORT       — bind port    (default 8443, Render sets $PORT)
 """
 
 import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from aiogram import Bot, Dispatcher
@@ -39,6 +46,10 @@ logging.basicConfig(
     format="%(asctime)s | %(name)-28s | %(levelname)-7s | %(message)s",
 )
 logger = logging.getLogger("bot")
+
+# ─── Module-level references (set in lifespan, used by webhook endpoint) ─
+_bot: Bot | None = None
+_dispatcher: Dispatcher | None = None
 
 
 # ─── Global Error Handler ────────────────────────────────────────────
@@ -121,19 +132,24 @@ async def lifespan(app: FastAPI):
     """Start everything concurrently and clean up on shutdown.
 
     Runs inside FastAPI so Render's $PORT binding is satisfied while
-    the bot polls Telegram in the background.
+    the bot receives webhook updates from Telegram.
     """
-    # 1. Database
+    global _bot, _dispatcher
+
+    # ── 1. Database ──────────────────────────────────────────────────
     logger.info("Initializing database (PostgreSQL) …")
     await init_db()
     logger.info("Database ready.")
 
-    # 2. Background rate-fetcher
+    # ── 2. Background rate-fetcher ───────────────────────────────────
     from utils.cache import rate_cache
     rate_fetcher_task = asyncio.create_task(rate_cache.start(interval=300))
-    logger.info("Background rate-fetcher task started (PID-like: %s)", rate_fetcher_task.get_name())
+    logger.info(
+        "Background rate-fetcher task started (PID-like: %s)",
+        rate_fetcher_task.get_name(),
+    )
 
-    # 3. aiogram Bot + Dispatcher
+    # ── 3. aiogram Bot + Dispatcher ──────────────────────────────────
     bot = Bot(
         token=config.BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
@@ -144,23 +160,39 @@ async def lifespan(app: FastAPI):
     dp.errors.register(global_error_handler)
     register_routers(dp)
 
-    polling_task = asyncio.create_task(dp.start_polling(bot))
-    logger.info("aiogram polling started.")
+    # Store references for the webhook endpoint
+    _bot = bot
+    _dispatcher = dp
+
+    # ── 4. Set webhook on Telegram ───────────────────────────────────
+    webhook_url = f"{config.WEBHOOK_BASE_URL}/webhook"
+    secret_token = config.WEBHOOK_SECRET or None
+
+    await bot.set_webhook(
+        url=webhook_url,
+        secret_token=secret_token,
+        # Drop pending updates to avoid processing old messages on restart
+        drop_pending_updates=True,
+    )
+    logger.info("Webhook registered: %s", webhook_url)
 
     yield  # ── FastAPI is now live, Render's health checks can pass ──
 
-    # ── Shutdown ──────────────────────────────────────────────────
+    # ── Shutdown ─────────────────────────────────────────────────────
     logger.info("Shutting down …")
+
+    # Remove the webhook from Telegram
+    await bot.delete_webhook()
+    logger.info("Webhook deleted.")
+
+    # Cancel background tasks
     rate_cache.stop()
     rate_fetcher_task.cancel()
-    polling_task.cancel()
 
-    # Wait for tasks to finish cancelling
-    for task in (rate_fetcher_task, polling_task):
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+    try:
+        await rate_fetcher_task
+    except asyncio.CancelledError:
+        pass
 
     await close_pool()
     await bot.session.close()
@@ -171,12 +203,48 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Telegram Bot Server", lifespan=lifespan)
 
 
+# ─── Webhook endpoint ────────────────────────────────────────────────
+
+@app.post("/webhook")
+async def webhook(request: Request) -> JSONResponse:
+    """Receive Telegram updates via webhook.
+
+    Validates the optional secret token, then feeds the raw JSON
+    update into aiogram's dispatcher for normal handler processing.
+
+    This is the single entry point for all incoming Telegram traffic.
+    """
+    # Optional: validate the secret token sent by Telegram
+    secret_token = config.WEBHOOK_SECRET
+    if secret_token:
+        header_token = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+        if header_token != secret_token:
+            return JSONResponse(status_code=403, content={"error": "Invalid secret token"})
+
+    # Parse the raw JSON body into an aiogram Update object
+    update = Update.model_validate(await request.json(), context={"bot": _bot})
+
+    # Feed the update into the aiogram dispatcher (runs all matching handlers)
+    await _dispatcher.feed_update(_bot, update)
+
+    return JSONResponse(status_code=200, content={"ok": True})
+
+
+# ─── Health & root endpoints ─────────────────────────────────────────
+
+@app.get("/", response_class=JSONResponse)
+async def root():
+    """Root endpoint — confirms the service is alive."""
+    return JSONResponse({"status": "ok", "mode": "webhook"})
+
+
 @app.get("/health", response_class=JSONResponse)
 async def health_check():
     """Health endpoint — ping this to keep the Render service alive."""
     from utils.cache import rate_cache
     return JSONResponse({
         "status": "ok",
+        "mode": "webhook",
         "rate_cache_ready": rate_cache.is_ready(),
         "rate_last_update": rate_cache.last_updated_str(),
     })

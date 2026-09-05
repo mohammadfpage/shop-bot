@@ -2,7 +2,7 @@
 Handler: Support Ticket System.
 
 Flow:
-    1. User clicks "🎧 پشتیبانی (تیکت)" on reply keyboard.
+    1. User clicks "🎧 پشتیبانی" on reply keyboard.
     2. Bot prompts the user to describe their issue.
     3. User sends their message.
     4. Bot saves the ticket in the DB and forwards it to SUPPORT_ADMIN_ID.
@@ -43,9 +43,9 @@ router = Router(name="ticket")
 logger = logging.getLogger(__name__)
 
 
-# ─── "🎧 پشتیبانی (تیکت)" pressed on reply keyboard ─────────────────
+# ─── "🎧 پشتیبانی" pressed on reply keyboard ──────────────────────
 
-@router.message(F.text == "🎧 پشتیبانی (تیکت)")
+@router.message(F.text == "🎧 پشتیبانی")
 async def cb_ticket_start(message: Message, state: FSMContext) -> None:
     """Prompt the user to write their support message."""
     await state.set_state(TicketStates.waiting_message)

@@ -36,10 +36,10 @@ class Config:
     ZARINPAL_CALLBACK_URL: str = os.getenv("ZARINPAL_CALLBACK_URL", "https://hamrahsocial.ir/verify")
 
     # ─── Webhook Server ────────────────────────────────────────────────
-    WEBHOOK_MODE: bool = os.getenv("WEBHOOK_MODE", "false").lower() == "true"
     WEBHOOK_HOST: str = os.getenv("WEBHOOK_HOST", "0.0.0.0")
     WEBHOOK_PORT: int = int(os.getenv("WEBHOOK_PORT", "8443"))
     WEBHOOK_BASE_URL: str = os.getenv("WEBHOOK_BASE_URL", "https://yourdomain.com")
+    WEBHOOK_SECRET: str = os.getenv("WEBHOOK_SECRET", "")
 
     # ─── Database (PostgreSQL via Neon) ──────────────────────────────────
     DATABASE_URL: str = os.getenv(

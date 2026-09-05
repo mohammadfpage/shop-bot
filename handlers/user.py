@@ -10,9 +10,15 @@ from aiogram.filters import CommandStart, Command
 from aiogram.exceptions import TelegramBadRequest
 
 from database.db import get_or_create_user, get_user_orders, get_total_users
-from keyboards.inline import main_menu_kb, back_to_menu_kb, market_rates_refresh_kb
+from keyboards.inline import (
+    main_menu_kb,
+    back_to_menu_kb,
+    market_rates_refresh_kb,
+    welcome_inline_kb,
+)
 from keyboards.reply import main_reply_kb
 from keyboards.admin_reply import admin_reply_kb
+from keyboards.callback_data import WelcomeCallback
 from filters import IsAdmin
 
 router = Router(name="user")
@@ -22,10 +28,13 @@ router = Router(name="user")
 
 @router.message(CommandStart())
 async def cmd_start(message: Message) -> None:
-    """Register the user and show the main reply keyboard + inline menu.
+    """Register the user and show the Ultimate Welcome Experience.
 
-    For admins, appends a special hint and shows the admin reply keyboard
-    with the "⚙️ ورود به پنل مدیریت" button.
+    Sends a beautifully formatted Persian welcome message with:
+      • A persistent ReplyKeyboardMarkup at the bottom (navigation)
+      • An InlineKeyboardMarkup directly under the welcome text (quick actions)
+
+    For admins, appends a special admin hint.
     """
     await get_or_create_user(
         user_id=message.from_user.id,
@@ -37,35 +46,94 @@ async def cmd_start(message: Message) -> None:
 
     text = (
         f"👋 <b>سلام {message.from_user.first_name} عزیز!</b>\n\n"
-        "به فروشگاه تلگرام خوش آمدید.\n"
-        "از منوی زیر خدمات مورد نظر خود را انتخاب کنید:"
+
+        "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "🤖 <b>فروشگاه هوشمند تلگرام</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+        "🌟 <b>چرا ما؟</b>\n"
+        "✅ تحویل <b>خودکار و آنی</b> پس از پرداخت\n"
+        "🕐 پشتیبانی <b>۲۴ ساعته</b> در ۷ روز هفته\n"
+        "💳 پرداخت <b>امن</b> از طریق زرین‌پال\n"
+        "💰 قیمت‌های <b>رقابتی</b> با نرخ لحظه‌ای ارز\n"
+        "🔒 <b>گارانتی</b> کیفیت تمامی خدمات\n\n"
+
+        "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "📦 <b>خدمات ما:</b>\n"
+        "⭐ تلگرام پرمیوم (ماهانه تا سالانه)\n"
+        "🎁 گیفت و استارز تلگرام\n"
+        "📱 شماره مجازی کشورهای مختلف\n"
+        "🤖 اکانت پرمیوم هوش مصنوعی\n"
+        "🎨 خدمات طراحی حرفه‌ای\n"
+        "🛡 امنیت صفحه و اکانت\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━"
     )
 
     if is_admin:
         text += (
-            "\n\n👑 <b>شما به عنوان مدیر شناخته شدید.</b>\n"
-            "برای ورود به پنل مدیریت دستور /admin را ارسال کنید "
-            "یا از دکمه زیر استفاده کنید."
+            "\n👑 <b>شما به عنوان مدیر شناخته شدید.</b>\n"
+            "برای ورود به پنل مدیریت دستور /admin را ارسال کنید."
         )
-        await message.answer(text, reply_markup=admin_reply_kb())
+        # Admins get: welcome text + inline quick actions + admin reply keyboard
+        await message.answer(text, reply_markup=welcome_inline_kb())
+        await message.answer(
+            "⚙️ <b>پنل مدیریت</b>\nاز دکمه زیر استفاده کنید:",
+            reply_markup=admin_reply_kb(),
+        )
     else:
-        await message.answer(text, reply_markup=main_reply_kb())
+        # Regular users get: welcome text + inline quick actions + user reply keyboard
+        await message.answer(text, reply_markup=welcome_inline_kb())
+        await message.answer(
+            "👇 از منوی زیر استفاده کنید:",
+            reply_markup=main_reply_kb(),
+        )
 
 
-# ─── Reply keyboard: 🛒 محصولات / خرید ──────────────────────────────
+# ─── WelcomeCallback handlers (inline buttons under welcome text) ────
 
-@router.message(F.text == "🛒 محصولات / خرید")
+@router.callback_query(WelcomeCallback.filter(F.action == "categories"))
+async def cb_welcome_categories(callback: CallbackQuery) -> None:
+    """Show the main shop menu with all product categories."""
+    with contextlib.suppress(TelegramBadRequest):
+        await callback.message.edit_text(
+            "🏠 <b>دسته‌بندی خدمات</b>\nیک سرویس را انتخاب کنید:",
+            reply_markup=await main_menu_kb(),
+        )
+    await callback.answer()
+
+
+@router.callback_query(WelcomeCallback.filter(F.action == "deals"))
+async def cb_welcome_deals(callback: CallbackQuery) -> None:
+    """Show special offers / discounts."""
+    with contextlib.suppress(TelegramBadRequest):
+        await callback.message.edit_text(
+            "🔥 <b>تخفیف‌های ویژه</b>\n\n"
+            "🎯 <b>پکیج پرمیوم تلگرام + استارز</b>\n"
+            "   خرید اشتراک سالانه + ۵۰۰ استارز با ۱۵٪ تخفیف\n\n"
+            "🎯 <b>اکانت هوش مصنوعی</b>\n"
+            "   خرید همزمان ChatGPT + Gemini با ۱۰٪ تخفیف\n\n"
+            "💡 برای بهره‌مندی از تخفیف‌ها، محصول مورد نظر را "
+            "از منوی خرید انتخاب کنید.\n\n"
+            "⏰ تخفیف‌ها محدود هستند!",
+            reply_markup=back_to_menu_kb(),
+        )
+    await callback.answer()
+
+
+# ─── Reply keyboard: 🛍 فروشگاه ────────────────────────────────────
+
+@router.message(F.text == "🛍 فروشگاه")
 async def reply_btn_shop(message: Message) -> None:
     """Show the inline shop menu when the user taps the shop button."""
     await message.answer(
         "🏠 <b>منوی خرید</b>\nیک سرویس را انتخاب کنید:",
-        reply_markup=main_menu_kb(),
+        reply_markup=await main_menu_kb(),
     )
 
 
-# ─── Reply keyboard: 👤 پروفایل من ──────────────────────────────────
+# ─── Reply keyboard: 👤 پروفایل ────────────────────────────────────
 
-@router.message(F.text == "👤 پروفایل من")
+@router.message(F.text == "👤 پروفایل")
 async def reply_btn_profile(message: Message) -> None:
     """Show the user's profile information."""
     user = await get_or_create_user(
@@ -87,35 +155,22 @@ async def reply_btn_profile(message: Message) -> None:
     await message.answer(text, reply_markup=main_reply_kb())
 
 
-# ─── Reply keyboard: 📚 راهنما ──────────────────────────────────────
+# ─── Reply keyboard: 🎧 پشتیبانی ───────────────────────────────────
 
-@router.message(F.text == "📚 راهنما")
-async def reply_btn_help(message: Message) -> None:
-    """Show help text (admin-aware)."""
-    is_admin = await IsAdmin()(message)
-
-    text = (
-        "📚 <b>راهنمای ربات</b>\n\n"
-        "🔹 <b>🛒 محصولات / خرید</b> — مشاهده و خرید خدمات\n"
-        "🔹 <b>👤 پروفایل من</b> — اطلاعات حساب شما\n"
-        "🔹 <b>💵 قیمت روز ارز</b> — مشاهده نرخ لحظه‌ای ارزها\n"
-        "🔹 <b>🎧 پشتیبانی (تیکت)</b> — ارسال پیام به پشتیبانی\n"
-        "🔹 <b>📚 راهنما</b> — نمایش این متن\n\n"
-        "💡 برای شروع خرید، روی «🛒 محصولات / خرید» کلیک کنید.\n"
-        "💡 برای ارتباط با پشتیبانی، روی «🎧 پشتیبانی (تیکت)» کلیک کنید."
+@router.message(F.text == "🎧 پشتیبانی")
+async def reply_btn_support(message: Message) -> None:
+    """Redirect to the ticket system."""
+    # Import here to avoid circular imports
+    from handlers.ticket import router as ticket_router
+    # Trigger the ticket flow by sending the same message through the ticket handler
+    # We just show a brief instruction since the ticket handler catches the text
+    await message.answer(
+        "🎧 <b>پشتیبانی</b>\n\n"
+        "📌 برای ارسال تیکت پشتیبانی، پیام خود را ارسال کنید.\n"
+        "پیام شما مستقیماً به تیم پشتیبانی ارسال خواهد شد.\n\n"
+        "💡 اگر سؤالی دارید، پیام خود را بنویسید و ارسال کنید.",
+        reply_markup=main_reply_kb(),
     )
-
-    if is_admin:
-        text += (
-            "\n\n👑 <b>پنل مدیریت:</b>\n"
-            "🔹 <b>⚙️ ورود به پنل مدیریت</b> — داشبورد مدیریتی\n"
-            "🔹 دستور <code>/admin</code> — ورود سریع به پنل مدیریت\n"
-            "🔹 دستور <code>/stats</code> — آمار سریع ربات\n"
-            "🔹 دستور <code>/users</code> — لیست کاربران"
-        )
-        await message.answer(text, reply_markup=admin_reply_kb())
-    else:
-        await message.answer(text, reply_markup=main_reply_kb())
 
 
 # ─── Back to menu ────────────────────────────────────────────────────
@@ -125,7 +180,7 @@ async def cb_back_to_menu(callback: CallbackQuery) -> None:
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
             "🏠 <b>منوی اصلی</b>\nیک سرویس را انتخاب کنید:",
-            reply_markup=main_menu_kb(),
+            reply_markup=await main_menu_kb(),
         )
     await callback.answer()
 

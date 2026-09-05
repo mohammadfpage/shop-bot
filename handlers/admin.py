@@ -34,7 +34,13 @@ from aiogram.exceptions import TelegramBadRequest
 
 from config import config
 from filters import IsAdmin
-from states.states import AdminStates
+from states.states import AdminStates, ProductState
+from keyboards.callback_data import ProductCallback
+from keyboards.admin_product import (
+    product_list_kb,
+    product_detail_kb,
+    product_edit_success_kb,
+)
 from database.db import (
     get_all_orders,
     get_order,
@@ -538,79 +544,195 @@ async def cb_admin_tickets(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "admin:prices", IsAdmin())
 async def cb_admin_prices(callback: CallbackQuery, state: FSMContext) -> None:
-    price_rows = await get_all_product_prices()
-    lines = ["💰 <b>قیمت پایه محصولات (USD)</b>\n"]
-    for row in price_rows:
-        lines.append(f"  <code>{row['product_key']}</code> = ${row['usd_price']:.2f} — {row['label']}")
-    lines.append("\n🔑 کلید محصول مورد نظر را ارسال کنید (مثال: <code>chatgpt_premium</code>).")
+    """Show the inline product list with live DB prices.
 
-    await state.set_state(AdminStates.edit_price_key)
+    This is the "Single-Message Panel" — the same message is edited
+    at each step, keeping the chat clean.
+    """
+    await state.clear()
+    price_rows = await get_all_product_prices()
+
+    if not price_rows:
+        with contextlib.suppress(TelegramBadRequest):
+            await callback.message.edit_text(
+                "💰 <b>هیچ محصولی یافت نشد.</b>",
+                reply_markup=admin_back_kb(),
+            )
+        await callback.answer()
+        return
+
+    # Build the list of dicts for the keyboard builder
+    products = [
+        {
+            "product_key": row["product_key"],
+            "label": row["label"],
+            "usd_price": float(row["usd_price"]),
+        }
+        for row in price_rows
+    ]
+
+    text = (
+        "💰 <b>مدیریت قیمت محصولات</b>\n\n"
+        "روی محصول مورد نظر کلیک کنید تا قیمت آن را ویرایش کنید:"
+    )
+
     with contextlib.suppress(TelegramBadRequest):
-        await callback.message.edit_text("\n".join(lines), reply_markup=admin_back_kb())
+        await callback.message.edit_text(
+            text,
+            reply_markup=product_list_kb(products),
+        )
     await callback.answer()
 
 
-@router.message(AdminStates.edit_price_key)
-async def msg_admin_price_key(message: Message, state: FSMContext) -> None:
-    if not await IsAdmin()(message):
-        return
+# ─── ProductCallback: SELECT (show detail view) ─────────────────────
 
-    key = message.text.strip()
+@router.callback_query(
+    ProductCallback.filter(F.action == "select"),
+    IsAdmin(),
+)
+async def cb_product_select(
+    callback: CallbackQuery,
+    callback_data: ProductCallback,
+    state: FSMContext,
+) -> None:
+    """Show product details with an "ویرایش قیمت" inline button.
+
+    This edits the same message — no new messages in the chat.
+    """
+    await state.clear()
+    key = callback_data.product_key
+
     price_rows = await get_all_product_prices()
-    valid_keys = [row["product_key"] for row in price_rows]
+    product = next((r for r in price_rows if r["product_key"] == key), None)
 
-    if key not in valid_keys:
-        await message.answer(
-            f"⚠️ کلید <code>{key}</code> یافت نشد.\nکلیدهای معتبر:\n" +
-            "\n".join(f"<code>{k}</code>" for k in valid_keys),
-            reply_markup=admin_back_kb(),
-        )
+    if not product:
+        await callback.answer("⚠️ محصول یافت نشد.", show_alert=True)
         return
 
-    current_price = await get_price_or_default(key)
-    await state.update_data(price_key=key)
-    await state.set_state(AdminStates.edit_price_value)
-    await message.answer(
-        f"قیمت فعلی <code>{key}</code>: <b>${current_price:.2f}</b>\n\n"
-        "قیمت جدید به دلار را ارسال کنید (مثال: <code>29.99</code>):",
-        reply_markup=admin_back_kb(),
+    label = product["label"]
+    price = float(product["usd_price"])
+
+    text = (
+        f"📦 <b>جزئیات محصول</b>\n\n"
+        f"🏷 نام: <b>{label}</b>\n"
+        f"🔑 کلید: <code>{key}</code>\n"
+        f"💰 قیمت فعلی: <b>${price:.2f}</b>\n\n"
+        f"💡 قیمت نهایی = (قیمت دلاری × نرخ ارز) × (۱ + ۲۰٪ حاشیه)"
     )
 
+    with contextlib.suppress(TelegramBadRequest):
+        await callback.message.edit_text(
+            text,
+            reply_markup=product_detail_kb(key, label, price),
+        )
+    await callback.answer()
 
-@router.message(AdminStates.edit_price_value)
-async def msg_admin_price_value(message: Message, state: FSMContext) -> None:
+
+# ─── ProductCallback: EDIT (enter FSM state) ────────────────────────
+
+@router.callback_query(
+    ProductCallback.filter(F.action == "edit"),
+    IsAdmin(),
+)
+async def cb_product_edit(
+    callback: CallbackQuery,
+    callback_data: ProductCallback,
+    state: FSMContext,
+) -> None:
+    """Enter FSM state — ask admin to type the new USD price.
+
+    Edits the same message to keep the chat clean.
+    """
+    key = callback_data.product_key
+
+    # Store the product key in FSM state so we can retrieve it later
+    await state.update_data(price_key=key)
+    await state.set_state(ProductState.waiting_for_price)
+
+    with contextlib.suppress(TelegramBadRequest):
+        await callback.message.edit_text(
+            "✏️ <b>ویرایش قیمت</b>\n\n"
+            f"محصول: <code>{key}</code>\n\n"
+            "لطفاً قیمت جدید را به عدد (دلار) ارسال کنید:\n"
+            "(مثال: <code>29.99</code>)",
+            reply_markup=admin_back_kb(),
+        )
+    await callback.answer()
+
+
+# ─── ProductState: receive new price text ────────────────────────────
+
+@router.message(ProductState.waiting_for_price)
+async def msg_product_price_input(message: Message, state: FSMContext) -> None:
+    """Receive the new price, update DB, edit bot message to success.
+
+    CRITICAL UX: Deletes the admin's text message to keep chat clean,
+    then edits the original bot message to show confirmation.
+    """
     if not await IsAdmin()(message):
         return
 
     text = message.text.strip()
+
+    # Validate the price input
     try:
         new_price = float(text)
         if new_price <= 0:
             raise ValueError
     except ValueError:
-        await message.answer("⚠️ لطفاً یک عدد مثبت معتبر ارسال کنید.", reply_markup=admin_back_kb())
+        await message.answer("⚠️ لطفاً یک عدد مثبت معتبر ارسال کنید.")
         return
 
     data = await state.get_data()
-    key = data["price_key"]
-    old_price = await get_price_or_default(key)
-
-    updated = await update_product_price(key, new_price)
-    if not updated:
-        await message.answer(
-            f"⚠️ خطا در به‌روزرسانی قیمت <code>{key}</code>.",
-            reply_markup=admin_back_kb(),
-        )
+    key = data.get("price_key")
+    if not key:
+        await message.answer("⚠️ خطا: کلید محصول یافت نشد. لطفاً دوباره از پنل شروع کنید.")
         await state.clear()
         return
 
+    old_price = await get_price_or_default(key)
+    updated = await update_product_price(key, new_price)
+
+    # CRITICAL UX: Delete the admin's text message to keep chat clean
+    try:
+        await message.delete()
+    except Exception:
+        pass  # message may already be deleted or permissions issue
+
     await state.clear()
-    await message.answer(
-        f"✅ قیمت با موفقیت به‌روزرسانی شد!\n\n"
-        f"<code>{key}</code>: ${old_price:.2f} → <b>${new_price:.2f}</b>\n\n"
-        "قیمت نهایی با نرخ لحظه‌ای ارز + حاشیه سود ۲۰٪ محاسبه می‌شود.",
-        reply_markup=admin_back_kb(),
+
+    if not updated:
+        # Try to find the original message to edit it
+        try:
+            await message.answer(
+                f"⚠️ خطا در به‌روزرسانی قیمت <code>{key}</code>.",
+                reply_markup=admin_back_kb(),
+            )
+        except Exception:
+            pass
+        return
+
+    # Success: edit the original bot message to show confirmation
+    success_text = (
+        f"✅ <b>قیمت با موفقیت بروزرسانی شد.</b>\n\n"
+        f"📦 محصول: <code>{key}</code>\n"
+        f"💰 قیمت قبلی: ${old_price:.2f}\n"
+        f"💰 قیمت جدید: <b>${new_price:.2f}</b>\n\n"
+        "💡 قیمت نهایی = (قیمت دلاری × نرخ ارز) × (۱ + ۲۰٪ حاشیه)"
     )
+
+    try:
+        await message.answer(
+            success_text,
+            reply_markup=product_edit_success_kb(),
+        )
+    except Exception:
+        pass
+
+
+# NOTE: The old AdminStates.edit_price_key and edit_price_value handlers
+# have been replaced by the inline ProductCallback system above.
+# See: cb_admin_prices → cb_product_select → cb_product_edit → msg_product_price_input
 
 
 @router.callback_query(F.data.startswith("admin:deliver:"), IsAdmin())

@@ -4,21 +4,144 @@ All labels in Persian (فارسی).
 """
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from keyboards.callback_data import WelcomeCallback
 
+# ─── Welcome Inline Keyboard ─────────────────────────────────────────
 
-# ─── Main Menu ───────────────────────────────────────────────────────
+def welcome_inline_kb() -> InlineKeyboardMarkup:
+    """Inline keyboard attached directly under the /start welcome text.
 
-def main_menu_kb() -> InlineKeyboardMarkup:
+    Provides quick actions so the user doesn't have to scroll
+    through the reply keyboard to get started.
+    """
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⭐ تلگرام پرمیوم", callback_data="menu:premium")],
-        [InlineKeyboardButton(text="🎁 گیفت تلگرام / استارز", callback_data="menu:stars")],
-        [InlineKeyboardButton(text="📱 شماره مجازی", callback_data="menu:virtual")],
-        [InlineKeyboardButton(text="🤖 اکانت هوش مصنوعی", callback_data="menu:ai_accounts")],
-        [InlineKeyboardButton(text="🎨 خدمات طراحی", callback_data="menu:design")],
-        [InlineKeyboardButton(text="🛡 امنیت صفحه", callback_data="menu:security")],
-        [InlineKeyboardButton(text="📊 قیمت لحظه‌ای ارزها", callback_data="menu:market_rates")],
-        [InlineKeyboardButton(text="📋 پیگیری سفارشات", callback_data="menu:my_orders")],
+        [
+            InlineKeyboardButton(
+                text="🛒 مشاهده دسته‌بندی‌ها",
+                callback_data=WelcomeCallback(action="categories").pack(),
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text="🔥 تخفیف‌های ویژه",
+                callback_data=WelcomeCallback(action="deals").pack(),
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text="📋 پیگیری سفارشات",
+                callback_data="menu:my_orders",
+            ),
+        ],
     ])
+
+
+# ─── Dynamic Main Menu (shop menu with live DB prices) ────────────────
+
+# Map each menu callback_data to the product_keys that belong to it.
+# The lowest-priced product in the group is used as the "starting at" price.
+_CATEGORY_PRODUCT_KEYS: dict[str, tuple[str, ...]] = {
+    "menu:premium": (
+        "telegram_premium_monthly",
+        "telegram_premium_quarterly",
+        "telegram_premium_semi_annual",
+        "telegram_premium_yearly",
+    ),
+    "menu:stars":       ("telegram_stars_per_50",),
+    "menu:virtual":     ("virtual_number",),
+    "menu:ai_accounts": ("chatgpt_premium", "gemini_premium"),
+    "menu:design": (
+        "design_ai",
+        "design_simple",
+        "design_normal",
+        "design_special",
+    ),
+    "menu:security":    (),  # tariffs are not in product_prices table
+}
+
+# Human-readable labels per category
+_CATEGORY_LABELS: dict[str, str] = {
+    "menu:premium":    "⭐ تلگرام پرمیوم",
+    "menu:stars":      "🎁 گیفت تلگرام / استارز",
+    "menu:virtual":    "📱 شماره مجازی",
+    "menu:ai_accounts":"🤖 اکانت هوش مصنوعی",
+    "menu:design":     "🎨 خدمات طراحی",
+    "menu:security":   "🛡 امنیت صفحه",
+}
+
+# Categories shown WITHOUT a price suffix
+_NO_PRICE_CATEGORIES: frozenset[str] = frozenset({
+    "menu:market_rates",
+    "menu:my_orders",
+    "menu:security",
+})
+
+# Ordered list of (callback_data, label) for the menu rows
+_MENU_ROWS: list[tuple[str, str]] = [
+    ("menu:premium",    "⭐ تلگرام پرمیوم"),
+    ("menu:stars",      "🎁 گیفت تلگرام / استارز"),
+    ("menu:virtual",    "📱 شماره مجازی"),
+    ("menu:ai_accounts","🤖 اکانت هوش مصنوعی"),
+    ("menu:design",     "🎨 خدمات طراحی"),
+    ("menu:security",   "🛡 امنیت صفحه"),
+    ("menu:market_rates","📊 قیمت لحظه‌ای ارزها"),
+    ("menu:my_orders",  "📋 پیگیری سفارشات"),
+]
+
+
+async def main_menu_kb() -> InlineKeyboardMarkup:
+    """Build the main shop menu with live DB prices on each category.
+
+    For each category that has products in ``product_prices``, the
+    button shows the lowest starting price:
+
+        ⭐ تلگرام پرمیوم  — از $5.99
+        🤖 اکانت هوش مصنوعی  — از $14.99
+
+    Categories without products (market rates, orders, security)
+    are shown without a price suffix.
+
+    Returns a cached ``InlineKeyboardMarkup`` ready for the handler.
+    """
+    from database.db import get_all_product_prices
+
+    # Fetch live prices from DB once
+    price_rows = await get_all_product_prices()
+
+    # Build a lookup: product_key → usd_price
+    price_map: dict[str, float] = {
+        row["product_key"]: float(row["usd_price"])
+        for row in price_rows
+    }
+
+    builder = InlineKeyboardBuilder()
+
+    for cb_data, label in _MENU_ROWS:
+        product_keys = _CATEGORY_PRODUCT_KEYS.get(cb_data)
+
+        if cb_data in _NO_PRICE_CATEGORIES or not product_keys:
+            # No price to show — plain label
+            builder.button(text=label, callback_data=cb_data)
+            continue
+
+        # Pick the lowest-priced product in this category as the starting price
+        prices = [
+            price_map[k]
+            for k in product_keys
+            if k in price_map
+        ]
+
+        if prices:
+            min_price = min(prices)
+            text = f"{label}  — از ${min_price:.2f}"
+        else:
+            text = label
+
+        builder.button(text=text, callback_data=cb_data)
+
+    builder.adjust(1)
+    return builder.as_markup()
 
 
 # ─── Telegram Premium ────────────────────────────────────────────────

@@ -12,26 +12,18 @@ def main_reply_kb() -> ReplyKeyboardMarkup:
     """Default reply keyboard shown on /start and throughout the conversation.
 
     Buttons:
-        🛒 محصولات / خرید    — opens inline shop menu
-        👤 پروفایل من        — shows user profile
-        💵 قیمت روز ارز     — shows cached exchange rates
-        🎧 پشتیبانی (تیکت)  — opens ticket flow
-        📚 راهنما            — shows help text
+        🛍 فروشگاه          — opens inline shop menu
+        👤 پروفایل           — shows user profile
+        🎧 پشتیبانی          — opens ticket flow
     """
     return ReplyKeyboardMarkup(
         keyboard=[
             [
-                KeyboardButton(text="🛒 محصولات / خرید"),
+                KeyboardButton(text="🛍 فروشگاه"),
             ],
             [
-                KeyboardButton(text="💵 قیمت روز ارز"),
-            ],
-            [
-                KeyboardButton(text="👤 پروفایل من"),
-                KeyboardButton(text="🎧 پشتیبانی (تیکت)"),
-            ],
-            [
-                KeyboardButton(text="📚 راهنما"),
+                KeyboardButton(text="👤 پروفایل"),
+                KeyboardButton(text="🎧 پشتیبانی"),
             ],
         ],
         resize_keyboard=True,
