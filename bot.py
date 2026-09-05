@@ -238,9 +238,26 @@ async def root():
     return JSONResponse({"status": "ok", "mode": "webhook"})
 
 
+@app.get("/ping", response_class=JSONResponse)
+async def ping():
+    """Keep-alive endpoint for cron-job.org / UptimeRobot.
+
+    Set your cron job to hit this URL every 10 minutes to prevent
+    Render's free tier from sleeping (15-min inactivity timeout).
+
+    Returns the cached price so you can verify the cache is warm.
+    """
+    from utils.cache import rate_cache
+    return JSONResponse({
+        "status": "alive",
+        "cached_price": rate_cache.get_data() is not None,
+        "last_update": rate_cache.last_updated_str(),
+    })
+
+
 @app.get("/health", response_class=JSONResponse)
 async def health_check():
-    """Health endpoint — ping this to keep the Render service alive."""
+    """Health endpoint — detailed status for monitoring."""
     from utils.cache import rate_cache
     return JSONResponse({
         "status": "ok",
