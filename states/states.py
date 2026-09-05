@@ -1,0 +1,70 @@
+"""
+Finite State Machine states for every product workflow.
+
+Each group of states belongs to one feature so that FSMHandler / Router
+can target exactly the right handler set.
+"""
+
+from aiogram.fsm.state import State, StatesGroup
+
+
+# ─── Telegram Premium ────────────────────────────────────────────────
+class TelegramPremiumStates(StatesGroup):
+    """Choose duration → own/other account → pay."""
+    choose_duration = State()   # monthly / quarterly / semi_annual / yearly
+    choose_target = State()     # own or other
+    enter_other_id = State()    # target Telegram user-id if "other"
+    payment = State()           # waiting for payment link click & verify
+
+
+# ─── Telegram Stars & Gifts ─────────────────────────────────────────
+class TelegramStarsStates(StatesGroup):
+    """Enter stars qty (min 50) → own/other → pay."""
+    enter_quantity = State()
+    choose_target = State()
+    enter_other_id = State()
+    payment = State()
+
+
+# ─── Virtual Numbers ─────────────────────────────────────────────────
+class VirtualNumberStates(StatesGroup):
+    """Choose country → pay → receive number."""
+    choose_country = State()
+    payment = State()
+    receive_number = State()
+
+
+# ─── AI Accounts (ChatGPT & Gemini) ──────────────────────────────────
+class AIAccountStates(StatesGroup):
+    """Choose platform → pay → auto-deliver credentials."""
+    choose_platform = State()   # chatgpt / gemini
+    payment = State()
+    deliver = State()
+
+
+# ─── Design Services ─────────────────────────────────────────────────
+class DesignServiceStates(StatesGroup):
+    """Choose tier → describe project → pay → forward to admin."""
+    choose_tier = State()       # AI / Simple / Normal / Special
+    enter_description = State() # free-text project description
+    enter_contact = State()     # how admin can reach you (username / phone)
+    payment = State()
+
+
+# ─── Page Security ───────────────────────────────────────────────────
+class PageSecurityStates(StatesGroup):
+    """View tariffs → fill request form → send to admin."""
+    choose_tariff = State()
+    enter_page_url = State()
+    enter_details = State()
+    confirm = State()
+
+
+# ─── Admin Panel ─────────────────────────────────────────────────────
+class AdminStates(StatesGroup):
+    """Admin-only FSM for price editing, broadcast, etc."""
+    edit_price_key = State()
+    edit_price_value = State()
+    process_order_id = State()
+    broadcast_message = State()     # waiting for broadcast text message
+    broadcast_photo = State()       # waiting for broadcast photo
