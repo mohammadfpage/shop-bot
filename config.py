@@ -2,13 +2,30 @@ import os
 from dataclasses import dataclass, field
 
 
+def _parse_admin_ids() -> list[int]:
+    """Parse ADMIN_IDS from the environment variable.
+
+    Format: comma-separated Telegram user IDs, e.g. "1652089506,7174138646"
+
+    How to set:
+        .env file:    ADMIN_IDS=1652089506,7174138646
+        Render:       Environment → ADMIN_IDS = 1652089506,7174138646
+        Shell:        export ADMIN_IDS="1652089506,7174138646"
+    """
+    raw = os.getenv("ADMIN_IDS", "1652089506,7174138646")
+    return [int(uid.strip()) for uid in raw.split(",") if uid.strip()]
+
+
 @dataclass
 class Config:
     # ─── Bot ────────────────────────────────────────────────────────────
     BOT_TOKEN: str = '8494498767:AAEfmbtnX89gngZbWPjkb3mMaTFfwVhphwY'
 
-    # ─── Admin ──────────────────────────────────────────────────────────
-    ADMIN_IDS: list[int] = field(default_factory=lambda: [1652089506, 7174138646])
+    # ─── Admin (read from ADMIN_IDS env var, comma-separated) ───────────
+    ADMIN_IDS: list[int] = field(default_factory=_parse_admin_ids)
+
+    # ─── Support Admin (receives tickets) ────────────────────────────────
+    SUPPORT_ADMIN_ID: int = 1652089506
 
     # ─── Zarinpal Payment Gateway ──────────────────────────────────────
     ZARINPAL_MERCHANT_ID: str = os.getenv(
@@ -24,8 +41,11 @@ class Config:
     WEBHOOK_PORT: int = int(os.getenv("WEBHOOK_PORT", "8443"))
     WEBHOOK_BASE_URL: str = os.getenv("WEBHOOK_BASE_URL", "https://yourdomain.com")
 
-    # ─── Database ───────────────────────────────────────────────────────
-    DATABASE_PATH: str = os.getenv("DATABASE_PATH", "database/bot.db")
+    # ─── Database (PostgreSQL via Neon) ──────────────────────────────────
+    DATABASE_URL: str = os.getenv(
+        "DATABASE_URL",
+        "postgresql://neondb_owner:npg_Nv5Sxsnfe4Mt@ep-wispy-wind-a51dz5fb-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require",
+    )
 
     # ─── BrsApi Exchange Rate API ──────────────────────────────────────
     BRS_API_URL: str = "https://Api.BrsApi.ir/Market/Gold_Currency.php?key=BuW46kKxyFYAWKTQchxx7ajGzv3ryR8x"

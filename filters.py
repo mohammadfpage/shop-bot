@@ -1,0 +1,82 @@
+"""
+Custom aiogram filters for role-based access control.
+
+Usage in handlers:
+    from filters import IsAdmin
+
+    @router.message(Command("admin"), IsAdmin())
+    async def cmd_admin(message: Message): ...
+
+    @router.message(IsAdmin())
+    async def admin_only_text(message: Message): ...
+
+The filter reads from config.ADMIN_IDS, which is populated from the
+ADMIN_IDS environment variable.
+
+──────────────────────────────────────────────────────────────────
+ HOW TO ADD YOUR TELEGRAM ID TO THE .env FILE
+──────────────────────────────────────────────────────────────────
+
+1.  Find your Telegram user ID:
+      • Open @userinfobot in Telegram and click Start.
+      • Copy the numeric ID it shows (e.g. 1652089506).
+
+2.  Set the environment variable (pick ONE method):
+
+    Option A — .env file (recommended for local development):
+      Create a file named .env in the project root and add:
+          ADMIN_IDS=1652089506
+
+      For multiple admins, separate with commas:
+          ADMIN_IDS=1652089506,7174138646
+
+    Option B — Render.com Dashboard:
+      Go to your Service → Environment tab → add:
+          Key:   ADMIN_IDS
+          Value: 1652089506
+
+    Option C — Export in shell:
+          export ADMIN_IDS="1652089506,7174138646"
+
+3.  Restart the bot after changing the value.
+──────────────────────────────────────────────────────────────────
+"""
+
+from typing import Any, Union
+
+from aiogram.filters import BaseFilter
+from aiogram.types import Message, CallbackQuery
+
+from config import config
+
+
+class IsAdmin(BaseFilter):
+    """Pass only updates from users whose Telegram ID is in ADMIN_IDS.
+
+    Works with both Message and CallbackQuery events.
+
+    Examples:
+        # On a single handler
+        @router.message(Command("admin"), IsAdmin())
+        async def cmd_admin(message: Message): ...
+
+        # On all handlers in a router (via middleware — see admin_security.py)
+    """
+
+    async def __call__(
+        self,
+        event: Union[Message, CallbackQuery],
+        **kwargs: Any,
+    ) -> bool:
+        """Return True if the sender is an admin, False otherwise."""
+        user_id: int | None = None
+
+        if isinstance(event, Message) and event.from_user:
+            user_id = event.from_user.id
+        elif isinstance(event, CallbackQuery) and event.from_user:
+            user_id = event.from_user.id
+
+        if user_id is None:
+            return False
+
+        return user_id in config.ADMIN_IDS

@@ -1,29 +1,37 @@
 """
 Telegram E-Commerce & Service Bot — main entry point.
 
+Architecture (Render.com Web Service):
+    • FastAPI binds to the required $PORT and keeps the dyno alive.
+    • Lifespan context manager starts three concurrent tasks:
+        1.  PostgreSQL init
+        2.  Background rate-fetcher (BrsApi, every 5 min)
+        3.  aiogram long-polling
+    • A /health endpoint is available for external uptime pings.
+
 Usage:
-    # Polling mode (default)
-    python bot.py
+    python bot.py           # starts FastAPI + polling
 
-    # Webhook mode (runs FastAPI + polling in parallel)
-    WEBHOOK_MODE=true python bot.py
-
-Environment variables (or edit config.py):
-    BOT_TOKEN, ADMIN_IDS, ZARINPAL_MERCHANT_ID, ZARINPAL_SANDBOX,
-    WEBHOOK_MODE, WEBHOOK_HOST, WEBHOOK_PORT, WEBHOOK_BASE_URL
+Environment variables:
+    BOT_TOKEN, ADMIN_IDS, DATABASE_URL, WEBHOOK_MODE, WEBHOOK_HOST,
+    WEBHOOK_PORT, WEBHOOK_BASE_URL
 """
 
 import asyncio
 import logging
-import multiprocessing
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import Update, ErrorEvent
 
 from config import config
-from database.db import init_db
+from database.db import init_db, close_pool
 
 # ─── Logging ─────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -33,10 +41,49 @@ logging.basicConfig(
 logger = logging.getLogger("bot")
 
 
+# ─── Global Error Handler ────────────────────────────────────────────
+
+async def global_error_handler(event: ErrorEvent) -> None:
+    """Catch ALL unhandled exceptions.
+
+    • Logs the real error to the console for debugging.
+    • Sends a polite Persian message to the user (never exposes tracebacks).
+    """
+    update: Update = event.update
+    exception = event.exception
+
+    logger.error(
+        "Unhandled exception in handler %s: %s",
+        getattr(update, "handler", "unknown"),
+        exception,
+        exc_info=True,
+    )
+
+    user_id: int | None = None
+    if update.message and update.message.from_user:
+        user_id = update.message.from_user.id
+    elif update.callback_query and update.callback_query.from_user:
+        user_id = update.callback_query.from_user.id
+
+    if user_id is not None:
+        try:
+            bot: Bot = event.bot
+            await bot.send_message(
+                chat_id=user_id,
+                text=(
+                    "❌ متاسفانه در پردازش درخواست شما مشکلی رخ داد.\n"
+                    "لطفاً لحظاتی بعد مجدداً تلاش کنید یا با پشتیبانی تماس بگیرید."
+                ),
+            )
+        except Exception as send_exc:
+            logger.error("Failed to send error message to user %s: %s", user_id, send_exc)
+
+
 # ─── Router registration ─────────────────────────────────────────────
 def register_routers(dp: Dispatcher) -> None:
     """Import and include every feature router in the dispatcher."""
     from handlers.user import router as user_router
+    from handlers.rate import router as rate_router
     from handlers.premium import router as premium_router
     from handlers.stars import router as stars_router
     from handlers.virtual_numbers import router as vn_router
@@ -45,6 +92,7 @@ def register_routers(dp: Dispatcher) -> None:
     from handlers.page_security import router as security_router
     from handlers.admin import router as admin_router
     from handlers.payment import router as payment_router
+    from handlers.ticket import router as ticket_router
 
     # Attach admin security middleware to the admin router
     from middleware.admin_security import AdminSecurityMiddleware
@@ -52,7 +100,9 @@ def register_routers(dp: Dispatcher) -> None:
     admin_router.callback_query.middleware(AdminSecurityMiddleware())
 
     dp.include_routers(
-        user_router,
+        user_router,       # Must be first to catch /start and reply keyboard buttons
+        rate_router,       # Exchange-rate cached response
+        ticket_router,     # Ticket system (reply keyboard triggers)
         premium_router,
         stars_router,
         vn_router,
@@ -63,94 +113,82 @@ def register_routers(dp: Dispatcher) -> None:
         payment_router,
     )
 
-# ─── Startup / Shutdown ─────────────────────────────────────────────
-# تغییر انجام شده در این خط است: _bot به bot تبدیل شد
-async def on_startup(bot: Bot) -> None:
-    logger.info("Initializing database …")
+
+# ─── FastAPI lifespan (the heart of Render deployment) ───────────────
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Start everything concurrently and clean up on shutdown.
+
+    Runs inside FastAPI so Render's $PORT binding is satisfied while
+    the bot polls Telegram in the background.
+    """
+    # 1. Database
+    logger.info("Initializing database (PostgreSQL) …")
     await init_db()
     logger.info("Database ready.")
 
+    # 2. Background rate-fetcher
+    from utils.cache import rate_cache
+    rate_fetcher_task = asyncio.create_task(rate_cache.start(interval=300))
+    logger.info("Background rate-fetcher task started (PID-like: %s)", rate_fetcher_task.get_name())
 
-async def on_shutdown(bot: Bot) -> None:
-    logger.info("Shutting down bot …")
-    await bot.session.close()
-
-
-# ─── Webhook server (runs in a separate process) ────────────────────
-
-def _run_webhook_server(bot_token: str) -> None:
-    """Start the FastAPI webhook server in a child process.
-
-    This function creates its own Bot instance for sending messages
-    (webhook handler needs an aiogram Bot, not just the HTTP server).
-    """
-    import uvicorn
-    from webhook.app import app, set_bot
-
-    async def _startup():
-        # Create a lightweight Bot for message delivery
-        bot = Bot(token=bot_token)
-        set_bot(bot)
-
-    # We can't easily mix asyncio event loops across processes,
-    # so we create the bot inside the lifespan.
-    # Override lifespan to inject the bot.
-    from contextlib import asynccontextmanager
-
-    @asynccontextmanager
-    async def webhook_lifespan(application):
-        from database.db import init_db as db_init
-        from aiogram import Bot as AiogramBot
-        bot = AiogramBot(token=bot_token)
-        set_bot(bot)
-        await db_init()
-        logger.info("Webhook server: database & bot ready.")
-        yield
-        await bot.session.close()
-        logger.info("Webhook server: bot session closed.")
-
-    app.router.lifespan_context = webhook_lifespan
-
-    uvicorn.run(
-        app,
-        host=config.WEBHOOK_HOST,
-        port=config.WEBHOOK_PORT,
-        log_level="info",
-    )
-
-# ─── Main ────────────────────────────────────────────────────────────
-async def main() -> None:
+    # 3. aiogram Bot + Dispatcher
     bot = Bot(
         token=config.BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
-
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
 
-    # Hooks
-    dp.startup.register(on_startup)
-    dp.shutdown.register(on_shutdown)
-
-    # Routers
+    dp.errors.register(global_error_handler)
     register_routers(dp)
 
-    # ── Webhook mode: run FastAPI in a parallel process ────────────
-    if config.WEBHOOK_MODE:
-        logger.info("Webhook mode enabled — starting FastAPI server on %s:%s",
-                     config.WEBHOOK_HOST, config.WEBHOOK_PORT)
+    polling_task = asyncio.create_task(dp.start_polling(bot))
+    logger.info("aiogram polling started.")
 
-        webhook_process = multiprocessing.Process(
-            target=_run_webhook_server,
-            args=(config.BOT_TOKEN,),
-            daemon=True,
-        )
-        webhook_process.start()
-        logger.info("Webhook server PID: %s", webhook_process.pid)
+    yield  # ── FastAPI is now live, Render's health checks can pass ──
 
-    # ── Telegram polling (always runs) ────────────────────────────
-    logger.info("Starting Telegram polling …")
-    await dp.start_polling(bot)
+    # ── Shutdown ──────────────────────────────────────────────────
+    logger.info("Shutting down …")
+    rate_cache.stop()
+    rate_fetcher_task.cancel()
+    polling_task.cancel()
 
+    # Wait for tasks to finish cancelling
+    for task in (rate_fetcher_task, polling_task):
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    await close_pool()
+    await bot.session.close()
+    logger.info("Shutdown complete.")
+
+
+# ─── FastAPI application ─────────────────────────────────────────────
+app = FastAPI(title="Telegram Bot Server", lifespan=lifespan)
+
+
+@app.get("/health", response_class=JSONResponse)
+async def health_check():
+    """Health endpoint — ping this to keep the Render service alive."""
+    from utils.cache import rate_cache
+    return JSONResponse({
+        "status": "ok",
+        "rate_cache_ready": rate_cache.is_ready(),
+        "rate_last_update": rate_cache.last_updated_str(),
+    })
+
+
+# ─── Entry point ─────────────────────────────────────────────────────
 if __name__ == "__main__":
-    asyncio.run(main())
+    import uvicorn
+
+    uvicorn.run(
+        "bot:app",
+        host=config.WEBHOOK_HOST,
+        port=config.WEBHOOK_PORT,
+        log_level="info",
+    )

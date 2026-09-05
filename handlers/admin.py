@@ -1,14 +1,23 @@
 """
 Handler: Admin panel.
 
-Commands: /admin — restricted to ADMIN_IDS.
+Commands:
+    /admin  — open admin dashboard (IsAdmin protected)
+    /stats  — quick bot statistics (IsAdmin protected)
+    /users  — list registered users (IsAdmin protected)
+
+Reply keyboard:
+    "⚙️ ورود به پنل مدیریت"  — same as /admin
+    "🔙 بازگشت به منوی اصلی" — return to normal user keyboard
+
 Features:
   - View pending / completed / all orders
   - Manage paid orders (fulfill or cancel with user notification)
-  - Edit product base prices (stored in SQLite, persists across restarts)
+  - Edit product base prices (stored in PostgreSQL, persists across restarts)
   - Financial reports (today / week / month / total revenue)
   - Broadcast message to all users
   - Total users stat on dashboard
+  - Admin guide / help
 
 All admin-facing text in Persian (فارسی).
 """
@@ -24,6 +33,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramBadRequest
 
 from config import config
+from filters import IsAdmin
 from states.states import AdminStates
 from database.db import (
     get_all_orders,
@@ -36,6 +46,7 @@ from database.db import (
     get_total_users,
     get_order_count_by_status,
     get_all_users,
+    get_open_tickets,
 )
 from keyboards.admin import (
     admin_panel_kb,
@@ -45,14 +56,12 @@ from keyboards.admin import (
     admin_finance_kb,
     admin_broadcast_confirm_kb,
 )
+from keyboards.admin_reply import admin_reply_kb
+from keyboards.reply import main_reply_kb
 from keyboards.inline import back_to_menu_kb
 
 router = Router(name="admin")
 logger = logging.getLogger(__name__)
-
-
-def _is_admin(user_id: int) -> bool:
-    return user_id in config.ADMIN_IDS
 
 
 def _status_fa(status: str) -> str:
@@ -68,14 +77,146 @@ def _safe_amount(amount: int) -> str:
     return f"{amount:,}".replace(",", "،") if amount else "—"
 
 
-# ─── /admin entry ────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════
+#  REPLY KEYBOARD HANDLERS (text buttons)
+# ═══════════════════════════════════════════════════════════════════════
 
-@router.message(Command("admin"))
+@router.message(F.text == "⚙️ ورود به پنل مدیریت", IsAdmin())
+async def reply_btn_admin_panel(message: Message, state: FSMContext) -> None:
+    """Open admin dashboard when the admin taps the reply keyboard button."""
+    await _show_admin_dashboard(message, state)
+
+
+@router.message(F.text == "🔙 بازگشت به منوی اصلی", IsAdmin())
+async def reply_btn_back_to_main(message: Message, state: FSMContext) -> None:
+    """Return to the normal user keyboard."""
+    await state.clear()
+    await message.answer(
+        "🏠 <b>منوی اصلی</b>\nیک سرویس را انتخاب کنید:",
+        reply_markup=main_reply_kb(),
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  COMMAND HANDLERS
+# ═══════════════════════════════════════════════════════════════════════
+
+@router.message(Command("admin"), IsAdmin())
 async def cmd_admin(message: Message, state: FSMContext) -> None:
-    if not _is_admin(message.from_user.id):
-        await message.answer("⛔ شما دسترسی به پنل مدیریت ندارید.")
+    """Open admin dashboard — protected by IsAdmin filter."""
+    await _show_admin_dashboard(message, state)
+
+
+@router.message(Command("stats"), IsAdmin())
+async def cmd_stats(message: Message) -> None:
+    """Show quick bot statistics for admins — protected by IsAdmin filter."""
+    user_count = await get_total_users()
+    pending = await get_order_count_by_status("pending")
+    paid = await get_order_count_by_status("paid")
+    delivered = await get_order_count_by_status("delivered")
+    cancelled = await get_order_count_by_status("cancelled")
+    today_rev = await get_revenue_by_period("today")
+    month_rev = await get_revenue_by_period("month")
+    total_rev = await get_revenue_by_period("all")
+    open_tickets = await get_open_tickets()
+
+    await message.answer(
+        f"📊 <b>آمار سریع ربات</b>\n\n"
+        f"👥 کل کاربران: <b>{user_count}</b>\n"
+        f"🟡 سفارشات در انتظار: <b>{pending}</b>\n"
+        f"🟢 پرداخت شده: <b>{paid}</b>\n"
+        f"✅ انجام شده: <b>{delivered}</b>\n"
+        f"❌ لغو شده: <b>{cancelled}</b>\n\n"
+        f"🎫 تیکت‌های باز: <b>{len(open_tickets)}</b>\n\n"
+        f"💰 درآمد امروز: <b>{_safe_amount(today_rev)} تومان</b>\n"
+        f"📆 درآمد ماهانه: <b>{_safe_amount(month_rev)} تومان</b>\n"
+        f"💎 درآمد کل: <b>{_safe_amount(total_rev)} تومان</b>",
+        reply_markup=admin_reply_kb(),
+    )
+
+
+@router.message(Command("users"), IsAdmin())
+async def cmd_users(message: Message) -> None:
+    """Show the total number of registered users — protected by IsAdmin filter."""
+    from database.db import get_pool
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT user_id, username, full_name, is_admin, joined_at "
+        "FROM users ORDER BY joined_at DESC LIMIT 50"
+    )
+
+    if not rows:
+        await message.answer("👥 هیچ کاربری ثبت‌نام نکرده است.", reply_markup=admin_reply_kb())
         return
 
+    lines = [f"👥 <b>لیست کاربران</b> (تا ۵۰ نفر آخر)\n"]
+    for r in rows:
+        admin_tag = " 🛡" if r["is_admin"] else ""
+        username = f"@{r['username']}" if r["username"] else "—"
+        lines.append(
+            f"• <code>{r['user_id']}</code> | {r['full_name']} | {username}{admin_tag}"
+        )
+
+    lines.append(f"\nتعداد کل: {len(rows)} کاربر")
+    await message.answer("\n".join(lines), reply_markup=admin_reply_kb())
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  ADMIN GUIDE / HELP
+# ═══════════════════════════════════════════════════════════════════════
+
+@router.callback_query(F.data == "admin:guide", IsAdmin())
+async def cb_admin_guide(callback: CallbackQuery) -> None:
+    """Show the admin guide — how to use the panel, respond to tickets, broadcast."""
+    guide_text = (
+        "📖 <b>راهنمای مدیران</b>\n\n"
+
+        "🔹 <b>📊 آمار کاربران</b>\n"
+        "   تعداد کل کاربران ثبت‌شده و وضعیت سفارشات را نمایش می‌دهد.\n\n"
+
+        "🔹 <b>✉️ ارسال پیام همگانی (Broadcast)</b>\n"
+        "   متنی بنویسید و آن را به تمام کاربران ربات ارسال کنید.\n"
+        "   پیش از ارسال، پیش‌نمایشی از پیام نمایش داده می‌شود.\n"
+        "   پس از تأیید، ربات به هر کاربر یک پیام ارسال می‌کند.\n\n"
+
+        "🔹 <b>🎫 مدیریت تیکت‌ها</b>\n"
+        "   وقتی کاربری تیکت پشتیبانی ارسال کند، پیام او برای شما\n"
+        "   فوروارد می‌شود. روی دکمه «📝 پاسخ» کلیک کنید و پاسخ خود\n"
+        "   را بنویسید. پاسخ شما برای کاربر ارسال خواهد شد.\n"
+        "   همچنین می‌توانید تیکت را بدون پاسخ با «✅ بستن تیکت» ببندید.\n\n"
+
+        "🔹 <b>💰 مدیریت قیمت محصولات</b>\n"
+        "   قیمت پایه محصولات (به دلار) را ویرایش کنید.\n"
+        "   قیمت نهایی = (قیمت دلاری × نرخ لحظه‌ای ارز) × (۱ + ۲۰٪)\n\n"
+
+        "🔹 <b>📈 گزارش مالی</b>\n"
+        "   درآمد امروز، هفتگی، ماهانه و کل را مشاهده کنید.\n\n"
+
+        "🔹 <b>📋 سفارشات</b>\n"
+        "   سفارشات در انتظار، پرداخت شده، تکمیل شده و لغو شده.\n"
+        "   سفارشات پرداخت شده را پس از انجام، به «انجام شده» تغییر\n"
+        "   دهید تا به کاربر اطلاع‌رسانی شود.\n\n"
+
+        "🔑 <b>دستورات سریع:</b>\n"
+        "   <code>/admin</code> — باز کردن پنل مدیریت\n"
+        "   <code>/stats</code> — آمار سریع\n"
+        "   <code>/users</code> — لیست کاربران"
+    )
+
+    with contextlib.suppress(TelegramBadRequest):
+        await callback.message.edit_text(
+            guide_text,
+            reply_markup=admin_back_kb(),
+        )
+    await callback.answer()
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  INTERNAL HELPERS
+# ═══════════════════════════════════════════════════════════════════════
+
+async def _show_admin_dashboard(message: Message, state: FSMContext) -> None:
+    """Display the admin dashboard with inline keyboard."""
     await state.clear()
     user_count = await get_total_users()
     await message.answer(
@@ -86,14 +227,12 @@ async def cmd_admin(message: Message, state: FSMContext) -> None:
     )
 
 
-# ─── Admin panel shortcut (callback) ────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════
+#  INLINE CALLBACK HANDLERS (all protected by IsAdmin filter)
+# ═══════════════════════════════════════════════════════════════════════
 
-@router.callback_query(F.data == "admin:panel")
+@router.callback_query(F.data == "admin:panel", IsAdmin())
 async def cb_admin_panel(callback: CallbackQuery, state: FSMContext) -> None:
-    if not _is_admin(callback.from_user.id):
-        await callback.answer("⛔ دسترسی غیرمجاز", show_alert=True)
-        return
-
     await state.clear()
     user_count = await get_total_users()
     with contextlib.suppress(TelegramBadRequest):
@@ -106,14 +245,8 @@ async def cb_admin_panel(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
-# ─── Users Stat ──────────────────────────────────────────────────────
-
-@router.callback_query(F.data == "admin:users_stat")
+@router.callback_query(F.data == "admin:users_stat", IsAdmin())
 async def cb_admin_users_stat(callback: CallbackQuery) -> None:
-    if not _is_admin(callback.from_user.id):
-        await callback.answer("⛔ دسترسی غیرمجاز", show_alert=True)
-        return
-
     user_count = await get_total_users()
     pending_count = await get_order_count_by_status("pending")
     paid_count = await get_order_count_by_status("paid")
@@ -133,14 +266,8 @@ async def cb_admin_users_stat(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# ─── Pending Orders ──────────────────────────────────────────────────
-
-@router.callback_query(F.data == "admin:pending")
+@router.callback_query(F.data == "admin:pending", IsAdmin())
 async def cb_admin_pending(callback: CallbackQuery) -> None:
-    if not _is_admin(callback.from_user.id):
-        await callback.answer("⛔ دسترسی غیرمجاز", show_alert=True)
-        return
-
     orders = await get_all_orders(status="pending")
     if not orders:
         with contextlib.suppress(TelegramBadRequest):
@@ -161,14 +288,8 @@ async def cb_admin_pending(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# ─── Paid Orders Management (مدیریت سفارشات پرداخت شده) ────────────
-
-@router.callback_query(F.data == "admin:paid_orders")
+@router.callback_query(F.data == "admin:paid_orders", IsAdmin())
 async def cb_admin_paid_orders(callback: CallbackQuery) -> None:
-    if not _is_admin(callback.from_user.id):
-        await callback.answer("⛔ دسترسی غیرمجاز", show_alert=True)
-        return
-
     orders = await get_all_orders(status="paid")
     if not orders:
         with contextlib.suppress(TelegramBadRequest):
@@ -184,7 +305,6 @@ async def cb_admin_paid_orders(callback: CallbackQuery) -> None:
                 f"{_safe_amount(o['amount_irt'])} تومان | کاربر: {o['user_id']}"
             )
         lines.append("\nروی سفارش مورد نظر کلیک کنید:")
-        # Build inline keyboard with order buttons
         from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
         buttons = []
         for o in orders[:10]:
@@ -200,12 +320,8 @@ async def cb_admin_paid_orders(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("admin:view_paid:"))
+@router.callback_query(F.data.startswith("admin:view_paid:"), IsAdmin())
 async def cb_admin_view_paid(callback: CallbackQuery) -> None:
-    if not _is_admin(callback.from_user.id):
-        await callback.answer("⛔ دسترسی غیرمجاز", show_alert=True)
-        return
-
     order_id = int(callback.data.split(":")[3])
     order = await get_order(order_id)
     if not order:
@@ -227,12 +343,8 @@ async def cb_admin_view_paid(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("admin:complete:"))
-async def cb_admin_complete(callback: CallbackQuery, bot=None) -> None:
-    if not _is_admin(callback.from_user.id):
-        await callback.answer("⛔ دسترسی غیرمجاز", show_alert=True)
-        return
-
+@router.callback_query(F.data.startswith("admin:complete:"), IsAdmin())
+async def cb_admin_complete(callback: CallbackQuery) -> None:
     order_id = int(callback.data.split(":")[2])
     order = await get_order(order_id)
     if not order:
@@ -241,7 +353,6 @@ async def cb_admin_complete(callback: CallbackQuery, bot=None) -> None:
 
     await update_order_status(order_id, "delivered")
 
-    # Notify user
     try:
         await callback.bot.send_message(
             order["user_id"],
@@ -262,14 +373,8 @@ async def cb_admin_complete(callback: CallbackQuery, bot=None) -> None:
     await callback.answer()
 
 
-# ─── Completed Orders ────────────────────────────────────────────────
-
-@router.callback_query(F.data == "admin:completed")
+@router.callback_query(F.data == "admin:completed", IsAdmin())
 async def cb_admin_completed(callback: CallbackQuery) -> None:
-    if not _is_admin(callback.from_user.id):
-        await callback.answer("⛔ دسترسی غیرمجاز", show_alert=True)
-        return
-
     orders = await get_all_orders(status="delivered")
     if not orders:
         with contextlib.suppress(TelegramBadRequest):
@@ -286,14 +391,8 @@ async def cb_admin_completed(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# ─── All Orders ──────────────────────────────────────────────────────
-
-@router.callback_query(F.data == "admin:all_orders")
+@router.callback_query(F.data == "admin:all_orders", IsAdmin())
 async def cb_admin_all(callback: CallbackQuery) -> None:
-    if not _is_admin(callback.from_user.id):
-        await callback.answer("⛔ دسترسی غیرمجاز", show_alert=True)
-        return
-
     orders = await get_all_orders()
     if not orders:
         with contextlib.suppress(TelegramBadRequest):
@@ -311,14 +410,8 @@ async def cb_admin_all(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# ─── Financial Reports (گزارش مالی) ─────────────────────────────────
-
-@router.callback_query(F.data == "admin:finance")
+@router.callback_query(F.data == "admin:finance", IsAdmin())
 async def cb_admin_finance(callback: CallbackQuery) -> None:
-    if not _is_admin(callback.from_user.id):
-        await callback.answer("⛔ دسترسی غیرمجاز", show_alert=True)
-        return
-
     today = await get_revenue_by_period("today")
     week = await get_revenue_by_period("week")
     month = await get_revenue_by_period("month")
@@ -337,14 +430,8 @@ async def cb_admin_finance(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# ─── Broadcast Message (پیام همگانی) ────────────────────────────────
-
-@router.callback_query(F.data == "admin:broadcast")
+@router.callback_query(F.data == "admin:broadcast", IsAdmin())
 async def cb_admin_broadcast(callback: CallbackQuery, state: FSMContext) -> None:
-    if not _is_admin(callback.from_user.id):
-        await callback.answer("⛔ دسترسی غیرمجاز", show_alert=True)
-        return
-
     await state.set_state(AdminStates.broadcast_message)
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
@@ -358,7 +445,7 @@ async def cb_admin_broadcast(callback: CallbackQuery, state: FSMContext) -> None
 
 @router.message(AdminStates.broadcast_message)
 async def msg_broadcast_text(message: Message, state: FSMContext) -> None:
-    if not _is_admin(message.from_user.id):
+    if not await IsAdmin()(message):
         return
 
     text = message.text.strip()
@@ -368,7 +455,6 @@ async def msg_broadcast_text(message: Message, state: FSMContext) -> None:
 
     await state.update_data(broadcast_text=text)
 
-    # Preview
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     preview_kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ ارسال به همه", callback_data="admin:broadcast:send")],
@@ -384,12 +470,8 @@ async def msg_broadcast_text(message: Message, state: FSMContext) -> None:
     )
 
 
-@router.callback_query(F.data == "admin:broadcast:send")
+@router.callback_query(F.data == "admin:broadcast:send", IsAdmin())
 async def cb_broadcast_send(callback: CallbackQuery, state: FSMContext) -> None:
-    if not _is_admin(callback.from_user.id):
-        await callback.answer("⛔ دسترسی غیرمجاز", show_alert=True)
-        return
-
     data = await state.get_data()
     broadcast_text = data.get("broadcast_text")
     if not broadcast_text:
@@ -417,7 +499,6 @@ async def cb_broadcast_send(callback: CallbackQuery, state: FSMContext) -> None:
             sent += 1
         except Exception:
             failed += 1
-        # Anti-flood: small delay between messages
         await asyncio.sleep(0.05)
 
     with contextlib.suppress(TelegramBadRequest):
@@ -431,14 +512,32 @@ async def cb_broadcast_send(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
-# ─── Edit Prices (DB-backed) ────────────────────────────────────────
+@router.callback_query(F.data == "admin:tickets", IsAdmin())
+async def cb_admin_tickets(callback: CallbackQuery) -> None:
+    """Show open support tickets."""
+    open_tickets = await get_open_tickets()
+    if not open_tickets:
+        with contextlib.suppress(TelegramBadRequest):
+            await callback.message.edit_text(
+                "🎫 <b>تیکت‌های باز</b>\n\nهیچ تیکت بازی وجود ندارد.",
+                reply_markup=admin_back_kb(),
+            )
+    else:
+        lines = [f"🎫 <b>تیکت‌های باز ({len(open_tickets)})</b>\n"]
+        for t in open_tickets[:20]:
+            lines.append(
+                f"#{t['ticket_id']} | 👤 {t['full_name']} | "
+                f"📅 {t['created_at'][:16] if t['created_at'] else '—'}\n"
+                f"   💬 {t['message'][:80]}{'…' if len(t['message']) > 80 else ''}"
+            )
+        lines.append("\nبرای پاسخ به تیکت، از دکمه «📝 پاسخ» روی پیام فوروارد شده استفاده کنید.")
+        with contextlib.suppress(TelegramBadRequest):
+            await callback.message.edit_text("\n".join(lines), reply_markup=admin_back_kb())
+    await callback.answer()
 
-@router.callback_query(F.data == "admin:prices")
+
+@router.callback_query(F.data == "admin:prices", IsAdmin())
 async def cb_admin_prices(callback: CallbackQuery, state: FSMContext) -> None:
-    if not _is_admin(callback.from_user.id):
-        await callback.answer("⛔ دسترسی غیرمجاز", show_alert=True)
-        return
-
     price_rows = await get_all_product_prices()
     lines = ["💰 <b>قیمت پایه محصولات (USD)</b>\n"]
     for row in price_rows:
@@ -453,7 +552,7 @@ async def cb_admin_prices(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.message(AdminStates.edit_price_key)
 async def msg_admin_price_key(message: Message, state: FSMContext) -> None:
-    if not _is_admin(message.from_user.id):
+    if not await IsAdmin()(message):
         return
 
     key = message.text.strip()
@@ -480,7 +579,7 @@ async def msg_admin_price_key(message: Message, state: FSMContext) -> None:
 
 @router.message(AdminStates.edit_price_value)
 async def msg_admin_price_value(message: Message, state: FSMContext) -> None:
-    if not _is_admin(message.from_user.id):
+    if not await IsAdmin()(message):
         return
 
     text = message.text.strip()
@@ -496,7 +595,6 @@ async def msg_admin_price_value(message: Message, state: FSMContext) -> None:
     key = data["price_key"]
     old_price = await get_price_or_default(key)
 
-    # Update in database (persists across restarts)
     updated = await update_product_price(key, new_price)
     if not updated:
         await message.answer(
@@ -515,19 +613,12 @@ async def msg_admin_price_value(message: Message, state: FSMContext) -> None:
     )
 
 
-# ─── Deliver / Cancel specific order (legacy) ────────────────────────
-
-@router.callback_query(F.data.startswith("admin:deliver:"))
+@router.callback_query(F.data.startswith("admin:deliver:"), IsAdmin())
 async def cb_admin_deliver(callback: CallbackQuery) -> None:
-    if not _is_admin(callback.from_user.id):
-        await callback.answer("⛔ دسترسی غیرمجاز", show_alert=True)
-        return
-
     order_id = int(callback.data.split(":")[2])
     order = await get_order(order_id)
     await update_order_status(order_id, "delivered")
 
-    # Notify user
     if order:
         try:
             await callback.bot.send_message(
@@ -548,17 +639,12 @@ async def cb_admin_deliver(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("admin:cancel:"))
+@router.callback_query(F.data.startswith("admin:cancel:"), IsAdmin())
 async def cb_admin_cancel(callback: CallbackQuery) -> None:
-    if not _is_admin(callback.from_user.id):
-        await callback.answer("⛔ دسترسی غیرمجاز", show_alert=True)
-        return
-
     order_id = int(callback.data.split(":")[2])
     order = await get_order(order_id)
     await update_order_status(order_id, "cancelled")
 
-    # Notify user
     if order:
         try:
             await callback.bot.send_message(

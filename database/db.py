@@ -1,111 +1,145 @@
 """
-Async SQLite database layer (aiosqlite).
+Async PostgreSQL database layer (asyncpg + Neon.tech).
 
 Tables:
     users           – registered Telegram users
     orders          – every purchase / request
     payments        – Zarinpal transaction records
     product_prices  – admin-managed base USD prices per product
+    tickets         – support tickets
 """
 
-import aiosqlite
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import asyncpg
+
 from config import config
 
-_db: Optional[aiosqlite.Connection] = None
+logger = logging.getLogger(__name__)
+
+_pool: Optional[asyncpg.Pool] = None
 
 
-async def get_db() -> aiosqlite.Connection:
-    global _db
-    if _db is None:
-        _db = await aiosqlite.connect(config.DATABASE_PATH)
-        _db.row_factory = aiosqlite.Row
-    return _db
+# ─── Connection Pool ────────────────────────────────────────────────
 
+async def get_pool() -> asyncpg.Pool:
+    """Return the global connection pool, creating it on first call."""
+    global _pool
+    if _pool is None:
+        _pool = await asyncpg.create_pool(
+            dsn=config.DATABASE_URL,
+            min_size=2,
+            max_size=10,
+            command_timeout=30,
+        )
+        logger.info("PostgreSQL connection pool created.")
+    return _pool
+
+
+async def close_pool() -> None:
+    """Gracefully close the connection pool."""
+    global _pool
+    if _pool is not None:
+        await _pool.close()
+        _pool = None
+        logger.info("PostgreSQL connection pool closed.")
+
+
+# ─── Schema Initialization ─────────────────────────────────────────
 
 async def init_db() -> None:
     """Create tables if they don't exist and seed default prices."""
-    db = await get_db()
-    await db.executescript("""
-        CREATE TABLE IF NOT EXISTS users (
-            user_id     INTEGER PRIMARY KEY,
-            username    TEXT,
-            full_name   TEXT,
-            is_admin    INTEGER DEFAULT 0,
-            joined_at   TEXT
-        );
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id     BIGINT PRIMARY KEY,
+                username    TEXT,
+                full_name   TEXT,
+                is_admin    BOOLEAN DEFAULT FALSE,
+                joined_at   TEXT
+            );
 
-        CREATE TABLE IF NOT EXISTS orders (
-            order_id    INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id     INTEGER NOT NULL,
-            product     TEXT NOT NULL,
-            details     TEXT,
-            amount_irt  INTEGER DEFAULT 0,
-            status      TEXT DEFAULT 'pending',   -- pending | paid | delivered | cancelled
-            created_at  TEXT
-        );
+            CREATE TABLE IF NOT EXISTS orders (
+                order_id    SERIAL PRIMARY KEY,
+                user_id     BIGINT NOT NULL,
+                product     TEXT NOT NULL,
+                details     TEXT,
+                amount_irt  INTEGER DEFAULT 0,
+                status      TEXT DEFAULT 'pending',
+                created_at  TEXT
+            );
 
-        CREATE TABLE IF NOT EXISTS payments (
-            payment_id      INTEGER PRIMARY KEY AUTOINCREMENT,
-            order_id        INTEGER NOT NULL,
-            authority       TEXT,
-            ref_id          TEXT,
-            amount_irt      INTEGER DEFAULT 0,
-            status          TEXT DEFAULT 'init',  -- init | verified | failed
-            verified_at     TEXT,
-            FOREIGN KEY (order_id) REFERENCES orders(order_id)
-        );
+            CREATE TABLE IF NOT EXISTS payments (
+                payment_id      SERIAL PRIMARY KEY,
+                order_id        INTEGER NOT NULL,
+                authority       TEXT,
+                ref_id          TEXT,
+                amount_irt      INTEGER DEFAULT 0,
+                status          TEXT DEFAULT 'init',
+                verified_at     TEXT,
+                FOREIGN KEY (order_id) REFERENCES orders(order_id)
+            );
 
-        CREATE TABLE IF NOT EXISTS product_prices (
-            product_key TEXT PRIMARY KEY,
-            label       TEXT,
-            usd_price   REAL NOT NULL
-        );
-    """)
-    await db.commit()
+            CREATE TABLE IF NOT EXISTS product_prices (
+                product_key TEXT PRIMARY KEY,
+                label       TEXT,
+                usd_price   DOUBLE PRECISION NOT NULL
+            );
 
-    # Seed default prices if table is empty
-    rows = await db.execute_fetchall("SELECT COUNT(*) FROM product_prices")
-    if rows[0][0] == 0:
-        for key, usd in config.PRICES.items():
-            label = config.PRICE_LABELS.get(key, key)
-            await db.execute(
-                "INSERT INTO product_prices (product_key, label, usd_price) VALUES (?, ?, ?)",
-                (key, label, usd),
-            )
-        await db.commit()
+            CREATE TABLE IF NOT EXISTS tickets (
+                ticket_id   SERIAL PRIMARY KEY,
+                user_id     BIGINT NOT NULL,
+                username    TEXT,
+                full_name   TEXT,
+                message     TEXT NOT NULL,
+                status      TEXT DEFAULT 'open',
+                created_at  TEXT,
+                replied_at  TEXT
+            );
+        """)
+
+        # Seed default prices if table is empty
+        row = await conn.fetchrow("SELECT COUNT(*) AS cnt FROM product_prices")
+        if row["cnt"] == 0:
+            for key, usd in config.PRICES.items():
+                label = config.PRICE_LABELS.get(key, key)
+                await conn.execute(
+                    "INSERT INTO product_prices (product_key, label, usd_price) VALUES ($1, $2, $3)",
+                    key, label, usd,
+                )
+        logger.info("Database tables initialized.")
 
 
 # ─── Product Price helpers ──────────────────────────────────────────
 
 async def get_product_price(product_key: str) -> Optional[float]:
     """Return the USD price for a product from the DB, or None."""
-    db = await get_db()
-    rows = await db.execute_fetchall(
-        "SELECT usd_price FROM product_prices WHERE product_key = ?", (product_key,)
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT usd_price FROM product_prices WHERE product_key = $1", product_key,
     )
-    return rows[0][0] if rows else None
+    return float(row["usd_price"]) if row else None
 
 
-async def get_all_product_prices() -> list[aiosqlite.Row]:
+async def get_all_product_prices() -> list[asyncpg.Record]:
     """Return all product prices."""
-    db = await get_db()
-    return await db.execute_fetchall(
+    pool = await get_pool()
+    return await pool.fetch(
         "SELECT product_key, label, usd_price FROM product_prices ORDER BY product_key"
     )
 
 
 async def update_product_price(product_key: str, new_usd_price: float) -> bool:
     """Update a product's USD price. Returns True if a row was updated."""
-    db = await get_db()
-    cursor = await db.execute(
-        "UPDATE product_prices SET usd_price = ? WHERE product_key = ?",
-        (new_usd_price, product_key),
+    pool = await get_pool()
+    result = await pool.execute(
+        "UPDATE product_prices SET usd_price = $1 WHERE product_key = $2",
+        new_usd_price, product_key,
     )
-    await db.commit()
-    return cursor.rowcount > 0
+    return result == "UPDATE 1"
 
 
 async def get_price_or_default(product_key: str) -> float:
@@ -122,104 +156,121 @@ async def get_or_create_user(
     user_id: int,
     username: Optional[str] = None,
     full_name: Optional[str] = None,
-) -> aiosqlite.Row:
-    db = await get_db()
-    row = await db.execute_fetchall(
-        "SELECT * FROM users WHERE user_id = ?", (user_id,)
-    )
-    if row:
-        return row[0]
-    await db.execute(
-        "INSERT OR IGNORE INTO users (user_id, username, full_name, is_admin, joined_at) VALUES (?, ?, ?, ?, ?)",
-        (user_id, username, full_name, 1 if user_id in config.ADMIN_IDS else 0, _now()),
-    )
-    await db.commit()
-    rows = await db.execute_fetchall("SELECT * FROM users WHERE user_id = ?", (user_id,))
-    return rows[0]
+) -> asyncpg.Record:
+    """Fetch an existing user or insert a new one. Returns the user row."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM users WHERE user_id = $1", user_id,
+        )
+        if row:
+            return row
+        await conn.execute(
+            """INSERT INTO users (user_id, username, full_name, is_admin, joined_at)
+               VALUES ($1, $2, $3, $4, $5)
+               ON CONFLICT (user_id) DO NOTHING""",
+            user_id, username, full_name,
+            user_id in config.ADMIN_IDS,
+            _now(),
+        )
+        return await conn.fetchrow(
+            "SELECT * FROM users WHERE user_id = $1", user_id,
+        )
 
 
 async def set_admin(user_id: int, is_admin: bool = True) -> None:
-    db = await get_db()
-    await db.execute("UPDATE users SET is_admin = ? WHERE user_id = ?", (int(is_admin), user_id))
-    await db.commit()
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE users SET is_admin = $1 WHERE user_id = $2", is_admin, user_id,
+    )
 
 
-async def get_all_users() -> list[aiosqlite.Row]:
+async def get_all_users() -> list[asyncpg.Record]:
     """Return all registered users (for broadcast)."""
-    db = await get_db()
-    return await db.execute_fetchall("SELECT user_id FROM users")
+    pool = await get_pool()
+    return await pool.fetch("SELECT user_id FROM users")
+
+
+async def get_total_users() -> int:
+    """Return total number of registered users."""
+    pool = await get_pool()
+    row = await pool.fetchrow("SELECT COUNT(*) AS cnt FROM users")
+    return row["cnt"] if row else 0
 
 
 # ─── Order helpers ───────────────────────────────────────────────────
 
 async def create_order(user_id: int, product: str, details: str = "", amount_irt: int = 0) -> int:
-    db = await get_db()
-    cursor = await db.execute(
-        "INSERT INTO orders (user_id, product, details, amount_irt, status, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-        (user_id, product, details, amount_irt, "pending", _now()),
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        """INSERT INTO orders (user_id, product, details, amount_irt, status, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING order_id""",
+        user_id, product, details, amount_irt, "pending", _now(),
     )
-    await db.commit()
-    return cursor.lastrowid
+    return row["order_id"]
 
 
 async def update_order_status(order_id: int, status: str) -> None:
-    db = await get_db()
-    await db.execute("UPDATE orders SET status = ? WHERE order_id = ?", (status, order_id))
-    await db.commit()
-
-
-async def get_order(order_id: int) -> Optional[aiosqlite.Row]:
-    db = await get_db()
-    rows = await db.execute_fetchall("SELECT * FROM orders WHERE order_id = ?", (order_id,))
-    return rows[0] if rows else None
-
-
-async def get_user_orders(user_id: int) -> list[aiosqlite.Row]:
-    db = await get_db()
-    return await db.execute_fetchall(
-        "SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC", (user_id,)
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE orders SET status = $1 WHERE order_id = $2", status, order_id,
     )
 
 
-async def get_all_orders(status: Optional[str] = None) -> list[aiosqlite.Row]:
-    db = await get_db()
+async def get_order(order_id: int) -> Optional[asyncpg.Record]:
+    pool = await get_pool()
+    return await pool.fetchrow(
+        "SELECT * FROM orders WHERE order_id = $1", order_id,
+    )
+
+
+async def get_user_orders(user_id: int) -> list[asyncpg.Record]:
+    pool = await get_pool()
+    return await pool.fetch(
+        "SELECT * FROM orders WHERE user_id = $1 ORDER BY created_at DESC", user_id,
+    )
+
+
+async def get_all_orders(status: Optional[str] = None) -> list[asyncpg.Record]:
+    pool = await get_pool()
     if status:
-        return await db.execute_fetchall(
-            "SELECT * FROM orders WHERE status = ? ORDER BY created_at DESC", (status,)
+        return await pool.fetch(
+            "SELECT * FROM orders WHERE status = $1 ORDER BY created_at DESC", status,
         )
-    return await db.execute_fetchall("SELECT * FROM orders ORDER BY created_at DESC")
+    return await pool.fetch("SELECT * FROM orders ORDER BY created_at DESC")
 
 
 async def update_order_amount(order_id: int, amount_irt: int) -> None:
-    db = await get_db()
-    await db.execute("UPDATE orders SET amount_irt = ? WHERE order_id = ?", (amount_irt, order_id))
-    await db.commit()
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE orders SET amount_irt = $1 WHERE order_id = $2", amount_irt, order_id,
+    )
 
 
 # ─── Payment helpers ─────────────────────────────────────────────────
 
 async def create_payment(order_id: int, amount_irt: int) -> int:
-    db = await get_db()
-    cursor = await db.execute(
-        "INSERT INTO payments (order_id, amount_irt, status) VALUES (?, ?, ?)",
-        (order_id, amount_irt, "init"),
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        """INSERT INTO payments (order_id, amount_irt, status)
+           VALUES ($1, $2, $3) RETURNING payment_id""",
+        order_id, amount_irt, "init",
     )
-    await db.commit()
-    return cursor.lastrowid
+    return row["payment_id"]
 
 
 async def update_payment_authority(payment_id: int, authority: str) -> None:
-    db = await get_db()
-    await db.execute(
-        "UPDATE payments SET authority = ? WHERE payment_id = ?", (authority, payment_id)
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE payments SET authority = $1 WHERE payment_id = $2", authority, payment_id,
     )
-    await db.commit()
 
 
-async def get_payment(payment_id: int) -> Optional[aiosqlite.Row]:
-    """Return a payment joined to its order using bound parameters."""
-    db = await get_db()
-    rows = await db.execute_fetchall(
+async def get_payment(payment_id: int) -> Optional[asyncpg.Record]:
+    """Return a payment joined to its order."""
+    pool = await get_pool()
+    return await pool.fetchrow(
         """
         SELECT
             p.payment_id,
@@ -235,117 +286,137 @@ async def get_payment(payment_id: int) -> Optional[aiosqlite.Row]:
             o.status AS order_status
         FROM payments AS p
         JOIN orders AS o ON o.order_id = p.order_id
-        WHERE p.payment_id = ?
+        WHERE p.payment_id = $1
         """,
-        (payment_id,),
+        payment_id,
     )
-    return rows[0] if rows else None
 
 
 async def complete_payment(payment_id: int, order_id: int, ref_id: str) -> bool:
     """Atomically mark one pending payment and its order as paid."""
-    db = await get_db()
+    pool = await get_pool()
     now = _now()
-    await db.execute("BEGIN")
-    try:
-        payment_cursor = await db.execute(
-            """
-            UPDATE payments
-            SET ref_id = ?, status = ?, verified_at = ?
-            WHERE payment_id = ? AND order_id = ? AND status = ?
-            """,
-            (ref_id, "verified", now, payment_id, order_id, "init"),
-        )
-        if payment_cursor.rowcount != 1:
-            await db.rollback()
-            return False
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            payment_result = await conn.execute(
+                """UPDATE payments
+                   SET ref_id = $1, status = $2, verified_at = $3
+                   WHERE payment_id = $4 AND order_id = $5 AND status = $6""",
+                ref_id, "verified", now, payment_id, order_id, "init",
+            )
+            if payment_result != "UPDATE 1":
+                return False
 
-        order_cursor = await db.execute(
-            """
-            UPDATE orders
-            SET status = ?
-            WHERE order_id = ? AND status = ?
-            """,
-            ("paid", order_id, "pending"),
-        )
-        if order_cursor.rowcount != 1:
-            await db.rollback()
-            return False
-
-        await db.commit()
-        return True
-    except Exception:
-        await db.rollback()
-        raise
+            order_result = await conn.execute(
+                """UPDATE orders SET status = $1
+                   WHERE order_id = $2 AND status = $3""",
+                "paid", order_id, "pending",
+            )
+            if order_result != "UPDATE 1":
+                return False
+    return True
 
 
 async def fail_payment(payment_id: int) -> None:
-    db = await get_db()
-    await db.execute(
-        "UPDATE payments SET status = ? WHERE payment_id = ? AND status = ?",
-        ("failed", payment_id, "init"),
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE payments SET status = $1 WHERE payment_id = $2 AND status = $3",
+        "failed", payment_id, "init",
     )
-    await db.commit()
 
 
 async def delete_payment(payment_id: int) -> None:
-    """Delete a payment by primary key using a bound parameter."""
-    db = await get_db()
-    await db.execute("DELETE FROM payments WHERE payment_id = ?", (payment_id,))
-    await db.commit()
-
-
-async def get_payment_by_authority(authority: str) -> Optional[aiosqlite.Row]:
-    db = await get_db()
-    rows = await db.execute_fetchall(
-        "SELECT * FROM payments WHERE authority = ?", (authority,)
+    pool = await get_pool()
+    await pool.execute(
+        "DELETE FROM payments WHERE payment_id = $1", payment_id,
     )
-    return rows[0] if rows else None
+
+
+async def get_payment_by_authority(authority: str) -> Optional[asyncpg.Record]:
+    pool = await get_pool()
+    return await pool.fetchrow(
+        "SELECT * FROM payments WHERE authority = $1", authority,
+    )
 
 
 # ─── Revenue / Stats helpers ────────────────────────────────────────
 
 async def get_revenue_by_period(period: str) -> int:
-    """Return total revenue (amount_irt) for orders with status 'completed' or 'paid'
-    or 'delivered'.
-
-    period: 'today', 'week', 'month', or 'all'
-    """
-    db = await get_db()
+    """Return total revenue (amount_irt) for completed/paid/delivered orders."""
+    pool = await get_pool()
     now = datetime.now(timezone.utc)
 
-    if period == 'today':
+    if period == "today":
         start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    elif period == 'week':
+    elif period == "week":
         start = now - timedelta(days=now.weekday())
         start = start.replace(hour=0, minute=0, second=0, microsecond=0)
-    elif period == 'month':
+    elif period == "month":
         start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    else:  # all
+    else:
         start = datetime(2020, 1, 1, tzinfo=timezone.utc)
 
     start_iso = start.isoformat()
-    rows = await db.execute_fetchall(
-        "SELECT COALESCE(SUM(amount_irt), 0) FROM orders WHERE status IN ('completed', 'paid', 'delivered') AND created_at >= ?",
-        (start_iso,)
+    row = await pool.fetchrow(
+        """SELECT COALESCE(SUM(amount_irt), 0) AS total
+           FROM orders
+           WHERE status IN ('completed', 'paid', 'delivered')
+             AND created_at >= $1""",
+        start_iso,
     )
-    return rows[0][0] if rows else 0
-
-
-async def get_total_users() -> int:
-    """Return total number of registered users."""
-    db = await get_db()
-    rows = await db.execute_fetchall("SELECT COUNT(*) FROM users")
-    return rows[0][0] if rows else 0
+    return row["total"] if row else 0
 
 
 async def get_order_count_by_status(status: str) -> int:
     """Return count of orders with a given status."""
-    db = await get_db()
-    rows = await db.execute_fetchall(
-        "SELECT COUNT(*) FROM orders WHERE status = ?", (status,)
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT COUNT(*) AS cnt FROM orders WHERE status = $1", status,
     )
-    return rows[0][0] if rows else 0
+    return row["cnt"] if row else 0
+
+
+# ─── Ticket helpers ──────────────────────────────────────────────────
+
+async def create_ticket(
+    user_id: int,
+    username: Optional[str],
+    full_name: Optional[str],
+    message: str,
+) -> int:
+    """Create a new support ticket. Returns the ticket_id."""
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        """INSERT INTO tickets (user_id, username, full_name, message, status, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING ticket_id""",
+        user_id, username, full_name, message, "open", _now(),
+    )
+    return row["ticket_id"]
+
+
+async def get_ticket(ticket_id: int) -> Optional[asyncpg.Record]:
+    pool = await get_pool()
+    return await pool.fetchrow(
+        "SELECT * FROM tickets WHERE ticket_id = $1", ticket_id,
+    )
+
+
+async def close_ticket(ticket_id: int) -> None:
+    """Mark a ticket as closed."""
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE tickets SET status = 'closed', replied_at = $1 WHERE ticket_id = $2",
+        _now(), ticket_id,
+    )
+
+
+async def get_open_tickets() -> list[asyncpg.Record]:
+    """Return all open tickets."""
+    pool = await get_pool()
+    return await pool.fetch(
+        "SELECT * FROM tickets WHERE status = 'open' ORDER BY created_at DESC"
+    )
 
 
 # ─── Internal ────────────────────────────────────────────────────────

@@ -1,16 +1,19 @@
 """
-Handler: /start, main menu, market rates, and order history.
+Handler: /start, main menu, profile, help, market rates, and order history.
 All user-facing text in Persian (فارسی).
 """
 
 import contextlib
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
 from aiogram.exceptions import TelegramBadRequest
 
-from database.db import get_or_create_user, get_user_orders
+from database.db import get_or_create_user, get_user_orders, get_total_users
 from keyboards.inline import main_menu_kb, back_to_menu_kb, market_rates_refresh_kb
+from keyboards.reply import main_reply_kb
+from keyboards.admin_reply import admin_reply_kb
+from filters import IsAdmin
 
 router = Router(name="user")
 
@@ -19,18 +22,100 @@ router = Router(name="user")
 
 @router.message(CommandStart())
 async def cmd_start(message: Message) -> None:
+    """Register the user and show the main reply keyboard + inline menu.
+
+    For admins, appends a special hint and shows the admin reply keyboard
+    with the "⚙️ ورود به پنل مدیریت" button.
+    """
     await get_or_create_user(
         user_id=message.from_user.id,
         username=message.from_user.username,
         full_name=message.from_user.full_name,
     )
 
+    is_admin = await IsAdmin()(message)
+
     text = (
         f"👋 <b>سلام {message.from_user.first_name} عزیز!</b>\n\n"
         "به فروشگاه تلگرام خوش آمدید.\n"
         "از منوی زیر خدمات مورد نظر خود را انتخاب کنید:"
     )
-    await message.answer(text, reply_markup=main_menu_kb())
+
+    if is_admin:
+        text += (
+            "\n\n👑 <b>شما به عنوان مدیر شناخته شدید.</b>\n"
+            "برای ورود به پنل مدیریت دستور /admin را ارسال کنید "
+            "یا از دکمه زیر استفاده کنید."
+        )
+        await message.answer(text, reply_markup=admin_reply_kb())
+    else:
+        await message.answer(text, reply_markup=main_reply_kb())
+
+
+# ─── Reply keyboard: 🛒 محصولات / خرید ──────────────────────────────
+
+@router.message(F.text == "🛒 محصولات / خرید")
+async def reply_btn_shop(message: Message) -> None:
+    """Show the inline shop menu when the user taps the shop button."""
+    await message.answer(
+        "🏠 <b>منوی خرید</b>\nیک سرویس را انتخاب کنید:",
+        reply_markup=main_menu_kb(),
+    )
+
+
+# ─── Reply keyboard: 👤 پروفایل من ──────────────────────────────────
+
+@router.message(F.text == "👤 پروفایل من")
+async def reply_btn_profile(message: Message) -> None:
+    """Show the user's profile information."""
+    user = await get_or_create_user(
+        user_id=message.from_user.id,
+        username=message.from_user.username,
+        full_name=message.from_user.full_name,
+    )
+
+    username_display = f"@{user['username']}" if user["username"] else "—"
+    admin_badg = " | 🛡 مدیر" if user["is_admin"] else ""
+
+    text = (
+        f"👤 <b>پروفایل من</b>\n\n"
+        f"🆔 شناسه: <code>{user['user_id']}</code>\n"
+        f"📛 نام: {user['full_name']}\n"
+        f"👤 یوزرنیم: {username_display}{admin_badg}\n"
+        f"📅 تاریخ عضویت: {user['joined_at'][:10] if user['joined_at'] else '—'}"
+    )
+    await message.answer(text, reply_markup=main_reply_kb())
+
+
+# ─── Reply keyboard: 📚 راهنما ──────────────────────────────────────
+
+@router.message(F.text == "📚 راهنما")
+async def reply_btn_help(message: Message) -> None:
+    """Show help text (admin-aware)."""
+    is_admin = await IsAdmin()(message)
+
+    text = (
+        "📚 <b>راهنمای ربات</b>\n\n"
+        "🔹 <b>🛒 محصولات / خرید</b> — مشاهده و خرید خدمات\n"
+        "🔹 <b>👤 پروفایل من</b> — اطلاعات حساب شما\n"
+        "🔹 <b>💵 قیمت روز ارز</b> — مشاهده نرخ لحظه‌ای ارزها\n"
+        "🔹 <b>🎧 پشتیبانی (تیکت)</b> — ارسال پیام به پشتیبانی\n"
+        "🔹 <b>📚 راهنما</b> — نمایش این متن\n\n"
+        "💡 برای شروع خرید، روی «🛒 محصولات / خرید» کلیک کنید.\n"
+        "💡 برای ارتباط با پشتیبانی، روی «🎧 پشتیبانی (تیکت)» کلیک کنید."
+    )
+
+    if is_admin:
+        text += (
+            "\n\n👑 <b>پنل مدیریت:</b>\n"
+            "🔹 <b>⚙️ ورود به پنل مدیریت</b> — داشبورد مدیریتی\n"
+            "🔹 دستور <code>/admin</code> — ورود سریع به پنل مدیریت\n"
+            "🔹 دستور <code>/stats</code> — آمار سریع ربات\n"
+            "🔹 دستور <code>/users</code> — لیست کاربران"
+        )
+        await message.answer(text, reply_markup=admin_reply_kb())
+    else:
+        await message.answer(text, reply_markup=main_reply_kb())
 
 
 # ─── Back to menu ────────────────────────────────────────────────────

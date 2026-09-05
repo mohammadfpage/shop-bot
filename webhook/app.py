@@ -198,28 +198,28 @@ async def _background_delivery(bot, order_id: int, user_id: int, product: str, d
 
 @app.get("/admin/stats")
 async def admin_stats():
-    from database.db import get_db
-    db = await get_db()
+    from database.db import get_pool
+    pool = await get_pool()
 
-    pending = await db.execute_fetchall(
-        "SELECT COUNT(*) FROM orders WHERE status = ?", ("pending",)
+    pending = await pool.fetchrow(
+        "SELECT COUNT(*) AS cnt FROM orders WHERE status = $1", "pending",
     )
-    paid = await db.execute_fetchall(
-        "SELECT COUNT(*) FROM orders WHERE status = ?", ("paid",)
+    paid = await pool.fetchrow(
+        "SELECT COUNT(*) AS cnt FROM orders WHERE status = $1", "paid",
     )
-    delivered = await db.execute_fetchall(
-        "SELECT COUNT(*) FROM orders WHERE status = ?", ("delivered",)
+    delivered = await pool.fetchrow(
+        "SELECT COUNT(*) AS cnt FROM orders WHERE status = $1", "delivered",
     )
-    total_revenue = await db.execute_fetchall(
-        "SELECT COALESCE(SUM(amount_irt), 0) FROM orders WHERE status IN (?, ?)",
-        ("paid", "delivered"),
+    total_revenue = await pool.fetchrow(
+        "SELECT COALESCE(SUM(amount_irt), 0) AS total FROM orders WHERE status IN ($1, $2)",
+        "paid", "delivered",
     )
 
     return JSONResponse({
-        "pending_orders": pending[0][0] if pending else 0,
-        "paid_orders": paid[0][0] if paid else 0,
-        "delivered_orders": delivered[0][0] if delivered else 0,
-        "total_revenue_irr": total_revenue[0][0] if total_revenue else 0,
+        "pending_orders": pending["cnt"] if pending else 0,
+        "paid_orders": paid["cnt"] if paid else 0,
+        "delivered_orders": delivered["cnt"] if delivered else 0,
+        "total_revenue_irr": total_revenue["total"] if total_revenue else 0,
     })
 
 

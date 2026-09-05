@@ -10,13 +10,15 @@ def admin_panel_kb(user_count: int = 0) -> InlineKeyboardMarkup:
     count_str = f" ({user_count})" if user_count else ""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=f"👥 کاربران{count_str}", callback_data="admin:users_stat")],
+        [InlineKeyboardButton(text="✉️ ارسال پیام همگانی", callback_data="admin:broadcast")],
+        [InlineKeyboardButton(text="🎫 مدیریت تیکت‌ها", callback_data="admin:tickets")],
         [InlineKeyboardButton(text="📋 سفارش‌های در انتظار", callback_data="admin:pending")],
         [InlineKeyboardButton(text="🔄 مدیریت سفارشات پرداخت شده", callback_data="admin:paid_orders")],
         [InlineKeyboardButton(text="✅ سفارش‌های تکمیل شده", callback_data="admin:completed")],
         [InlineKeyboardButton(text="💰 مدیریت قیمت محصولات", callback_data="admin:prices")],
         [InlineKeyboardButton(text="📊 تمام سفارش‌ها", callback_data="admin:all_orders")],
         [InlineKeyboardButton(text="📈 گزارش مالی", callback_data="admin:finance")],
-        [InlineKeyboardButton(text="📣 پیام همگانی", callback_data="admin:broadcast")],
+        [InlineKeyboardButton(text="📖 راهنمای مدیران", callback_data="admin:guide")],
     ])
 
 

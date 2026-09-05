@@ -60,6 +60,13 @@ class PageSecurityStates(StatesGroup):
     confirm = State()
 
 
+# ─── Ticket / Support ────────────────────────────────────────────────
+class TicketStates(StatesGroup):
+    """Support ticket: user sends message → forwarded to admin → admin replies."""
+    waiting_message = State()       # waiting for user's ticket message
+    admin_reply = State()           # admin is typing a reply to a ticket
+
+
 # ─── Admin Panel ─────────────────────────────────────────────────────
 class AdminStates(StatesGroup):
     """Admin-only FSM for price editing, broadcast, etc."""
