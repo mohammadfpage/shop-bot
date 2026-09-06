@@ -110,6 +110,15 @@ async def init_db() -> None:
                     "INSERT INTO product_prices (product_key, label, usd_price) VALUES ($1, $2, $3)",
                     key, label, usd,
                 )
+        else:
+            # Insert any new products that exist in config but not in DB
+            for key, usd in config.PRICES.items():
+                label = config.PRICE_LABELS.get(key, key)
+                await conn.execute(
+                    "INSERT INTO product_prices (product_key, label, usd_price) "
+                    "VALUES ($1, $2, $3) ON CONFLICT (product_key) DO NOTHING",
+                    key, label, usd,
+                )
         logger.info("Database tables initialized.")
 
 

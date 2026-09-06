@@ -3,7 +3,7 @@ Shared product delivery logic.
 
 Called by:
   • handlers/payment.py   (manual "پرداخت کردم" button flow)
-  • webhook/verify.py     (automatic Zarinpal callback flow)
+  • bot.py /verify         (automatic Zarinpal callback flow)
 
 Both paths converge here so the delivery logic is never duplicated.
 All user-facing text in Persian (فارسی).

@@ -49,6 +49,14 @@ _CATEGORY_PRODUCT_KEYS: dict[str, tuple[str, ...]] = {
         "telegram_premium_yearly",
     ),
     "menu:stars":       ("telegram_stars_per_50",),
+    "menu:stars_gift":  (
+        "telegram_stars_gift_50",
+        "telegram_stars_gift_100",
+        "telegram_stars_gift_250",
+        "telegram_stars_gift_500",
+        "telegram_stars_gift_1000",
+        "telegram_stars_gift_2500",
+    ),
     "menu:virtual":     ("virtual_number",),
     "menu:ai_accounts": ("chatgpt_premium", "gemini_premium"),
     "menu:design": (
@@ -63,7 +71,8 @@ _CATEGORY_PRODUCT_KEYS: dict[str, tuple[str, ...]] = {
 # Human-readable labels per category
 _CATEGORY_LABELS: dict[str, str] = {
     "menu:premium":    "⭐ تلگرام پرمیوم",
-    "menu:stars":      "🎁 گیفت تلگرام / استارز",
+    "menu:stars":      "🌟 خرید استارز",
+    "menu:stars_gift": "🎁 خرید گیفت استارز",
     "menu:virtual":    "📱 شماره مجازی",
     "menu:ai_accounts":"🤖 اکانت هوش مصنوعی",
     "menu:design":     "🎨 خدمات طراحی",
@@ -80,7 +89,8 @@ _NO_PRICE_CATEGORIES: frozenset[str] = frozenset({
 # Ordered list of (callback_data, label) for the menu rows
 _MENU_ROWS: list[tuple[str, str]] = [
     ("menu:premium",    "⭐ تلگرام پرمیوم"),
-    ("menu:stars",      "🎁 گیفت تلگرام / استارز"),
+    ("menu:stars",      "🌟 خرید استارز"),
+    ("menu:stars_gift", "🎁 خرید گیفت استارز"),
     ("menu:virtual",    "📱 شماره مجازی"),
     ("menu:ai_accounts","🤖 اکانت هوش مصنوعی"),
     ("menu:design",     "🎨 خدمات طراحی"),
@@ -164,13 +174,28 @@ def premium_target_kb() -> InlineKeyboardMarkup:
     ])
 
 
-# ─── Telegram Stars ─────────────────────────────────────────────────
+# ─── Telegram Stars (Standard) ─────────────────────────────────────
 
 def stars_target_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="👤 برای خودم", callback_data="stars:target:self")],
         [InlineKeyboardButton(text="👥 برای شخص دیگر", callback_data="stars:target:other")],
         [InlineKeyboardButton(text="🔙 بازگشت", callback_data="stars:back")],
+    ])
+
+
+# ─── Telegram Stars Gifts ──────────────────────────────────────────
+
+def stars_gift_package_kb() -> InlineKeyboardMarkup:
+    """Fixed gift package selection keyboard."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎁 ۵۰ استارز", callback_data="stars_gift:pkg:50")],
+        [InlineKeyboardButton(text="🎁 ۱۰۰ استارز", callback_data="stars_gift:pkg:100")],
+        [InlineKeyboardButton(text="🎁 ۲۵۰ استارز", callback_data="stars_gift:pkg:250")],
+        [InlineKeyboardButton(text="🎁 ۵۰۰ استارز", callback_data="stars_gift:pkg:500")],
+        [InlineKeyboardButton(text="🎁 ۱۰۰۰ استارز", callback_data="stars_gift:pkg:1000")],
+        [InlineKeyboardButton(text="🎁 ۲۵۰۰ استارز", callback_data="stars_gift:pkg:2500")],
+        [InlineKeyboardButton(text="🔙 بازگشت", callback_data="menu:back")],
     ])
 
 

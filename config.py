@@ -61,8 +61,16 @@ class Config:
         "telegram_premium_semi_annual": 24.99,
         "telegram_premium_yearly": 35.99,
 
-        # Telegram Stars (per 50 stars)
+        # Telegram Stars (per 50 stars, custom quantity)
         "telegram_stars_per_50": 0.99,
+
+        # Telegram Stars Gifts (fixed packages)
+        "telegram_stars_gift_50": 0.99,
+        "telegram_stars_gift_100": 1.99,
+        "telegram_stars_gift_250": 4.99,
+        "telegram_stars_gift_500": 9.99,
+        "telegram_stars_gift_1000": 19.99,
+        "telegram_stars_gift_2500": 49.99,
 
         # Virtual Numbers
         "virtual_number": 3.50,
@@ -85,6 +93,12 @@ class Config:
         "telegram_premium_semi_annual": "تلگرام پرمیوم — شش‌ماهه",
         "telegram_premium_yearly": "تلگرام پرمیوم — سالانه",
         "telegram_stars_per_50": "استارز تلگرام (هر ۵۰ استارز)",
+        "telegram_stars_gift_50": "گیفت ۵۰ استارز",
+        "telegram_stars_gift_100": "گیفت ۱۰۰ استارز",
+        "telegram_stars_gift_250": "گیفت ۲۵۰ استارز",
+        "telegram_stars_gift_500": "گیفت ۵۰۰ استارز",
+        "telegram_stars_gift_1000": "گیفت ۱۰۰۰ استارز",
+        "telegram_stars_gift_2500": "گیفت ۲۵۰۰ استارز",
         "virtual_number": "شماره مجازی",
         "chatgpt_premium": "چت‌جی‌پی‌تی پلاس",
         "gemini_premium": "جمنای پیشرفته",

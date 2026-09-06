@@ -17,12 +17,19 @@ class TelegramPremiumStates(StatesGroup):
     payment = State()           # waiting for payment link click & verify
 
 
-# ─── Telegram Stars & Gifts ─────────────────────────────────────────
+# ─── Telegram Stars (Standard, custom quantity) ─────────────────────
 class TelegramStarsStates(StatesGroup):
     """Enter stars qty (min 50) → own/other → pay."""
     enter_quantity = State()
     choose_target = State()
     enter_other_id = State()
+    payment = State()
+
+
+# ─── Telegram Stars Gifts (Fixed packages) ─────────────────────────
+class TelegramStarsGiftStates(StatesGroup):
+    """Choose gift package → pay → receive gift link."""
+    choose_package = State()
     payment = State()
 
 
