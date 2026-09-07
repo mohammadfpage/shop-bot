@@ -41,115 +41,28 @@ def welcome_inline_kb() -> InlineKeyboardMarkup:
 
 # Map each menu callback_data to the product_keys that belong to it.
 # The lowest-priced product in the group is used as the "starting at" price.
-_CATEGORY_PRODUCT_KEYS: dict[str, tuple[str, ...]] = {
-    "menu:premium": (
-        "telegram_premium_monthly",
-        "telegram_premium_quarterly",
-        "telegram_premium_semi_annual",
-        "telegram_premium_yearly",
-    ),
-    "menu:stars":       ("telegram_stars_per_50",),
-    "menu:stars_gift":  (
-        "telegram_stars_gift_50",
-        "telegram_stars_gift_100",
-        "telegram_stars_gift_250",
-        "telegram_stars_gift_500",
-        "telegram_stars_gift_1000",
-        "telegram_stars_gift_2500",
-    ),
-    "menu:virtual":     ("virtual_number",),
-    "menu:ai_accounts": ("chatgpt_premium", "gemini_premium"),
-    "menu:design": (
-        "design_ai",
-        "design_simple",
-        "design_normal",
-        "design_special",
-    ),
-    "menu:security":    (),  # tariffs are not in product_prices table
-}
+# (No longer used for price display — main_menu_kb shows plain labels)
 
-# Human-readable labels per category
-_CATEGORY_LABELS: dict[str, str] = {
-    "menu:premium":    "⭐ تلگرام پرمیوم",
-    "menu:stars":      "🌟 خرید استارز",
-    "menu:stars_gift": "🎁 خرید گیفت استارز",
-    "menu:virtual":    "📱 شماره مجازی",
-    "menu:ai_accounts":"🤖 اکانت هوش مصنوعی",
-    "menu:design":     "🎨 خدمات طراحی",
-    "menu:security":   "🛡 امنیت صفحه",
-}
 
-# Categories shown WITHOUT a price suffix
-_NO_PRICE_CATEGORIES: frozenset[str] = frozenset({
-    "menu:market_rates",
-    "menu:my_orders",
-    "menu:security",
-})
 
-# Ordered list of (callback_data, label) for the menu rows
+# Ordered list of (callback_data, label) for the menu rows (no price suffix)
 _MENU_ROWS: list[tuple[str, str]] = [
-    ("menu:premium",    "⭐ تلگرام پرمیوم"),
-    ("menu:stars",      "🌟 خرید استارز"),
-    ("menu:stars_gift", "🎁 خرید گیفت استارز"),
-    ("menu:virtual",    "📱 شماره مجازی"),
-    ("menu:ai_accounts","🤖 اکانت هوش مصنوعی"),
-    ("menu:design",     "🎨 خدمات طراحی"),
-    ("menu:security",   "🛡 امنیت صفحه"),
+    ("menu:premium",     "⭐ تلگرام پرمیوم"),
+    ("menu:stars",       "🌟 خرید استارز"),
+    ("menu:stars_gift",  "🎁 گیفت‌های استارز"),
+    ("menu:ai_accounts", "🤖 اکانت هوش مصنوعی"),
+    ("menu:design",      "🎨 خدمات طراحی"),
+    ("menu:security",    "🛡 امنیت صفحه"),
     ("menu:market_rates","📊 قیمت لحظه‌ای ارزها"),
-    ("menu:my_orders",  "📋 پیگیری سفارشات"),
+    ("menu:my_orders",   "📋 پیگیری سفارشات"),
 ]
 
 
 async def main_menu_kb() -> InlineKeyboardMarkup:
-    """Build the main shop menu with live DB prices on each category.
-
-    For each category that has products in ``product_prices``, the
-    button shows the lowest starting price:
-
-        ⭐ تلگرام پرمیوم  — از $5.99
-        🤖 اکانت هوش مصنوعی  — از $14.99
-
-    Categories without products (market rates, orders, security)
-    are shown without a price suffix.
-
-    Returns a cached ``InlineKeyboardMarkup`` ready for the handler.
-    """
-    from database.db import get_all_product_prices
-
-    # Fetch live prices from DB once
-    price_rows = await get_all_product_prices()
-
-    # Build a lookup: product_key → usd_price
-    price_map: dict[str, float] = {
-        row["product_key"]: float(row["usd_price"])
-        for row in price_rows
-    }
-
+    """Build the main shop menu — plain category labels, no price suffix."""
     builder = InlineKeyboardBuilder()
-
     for cb_data, label in _MENU_ROWS:
-        product_keys = _CATEGORY_PRODUCT_KEYS.get(cb_data)
-
-        if cb_data in _NO_PRICE_CATEGORIES or not product_keys:
-            # No price to show — plain label
-            builder.button(text=label, callback_data=cb_data)
-            continue
-
-        # Pick the lowest-priced product in this category as the starting price
-        prices = [
-            price_map[k]
-            for k in product_keys
-            if k in price_map
-        ]
-
-        if prices:
-            min_price = min(prices)
-            text = f"{label}  — از ${min_price:.2f}"
-        else:
-            text = label
-
-        builder.button(text=text, callback_data=cb_data)
-
+        builder.button(text=label, callback_data=cb_data)
     builder.adjust(1)
     return builder.as_markup()
 
@@ -184,31 +97,66 @@ def stars_target_kb() -> InlineKeyboardMarkup:
     ])
 
 
-# ─── Telegram Stars Gifts ──────────────────────────────────────────
+# ─── Telegram Stars Gifts (individual items, 2-column layout) ───────
 
-def stars_gift_package_kb() -> InlineKeyboardMarkup:
-    """Fixed gift package selection keyboard."""
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎁 ۵۰ استارز", callback_data="stars_gift:pkg:50")],
-        [InlineKeyboardButton(text="🎁 ۱۰۰ استارز", callback_data="stars_gift:pkg:100")],
-        [InlineKeyboardButton(text="🎁 ۲۵۰ استارز", callback_data="stars_gift:pkg:250")],
-        [InlineKeyboardButton(text="🎁 ۵۰۰ استارز", callback_data="stars_gift:pkg:500")],
-        [InlineKeyboardButton(text="🎁 ۱۰۰۰ استارز", callback_data="stars_gift:pkg:1000")],
-        [InlineKeyboardButton(text="🎁 ۲۵۰۰ استارز", callback_data="stars_gift:pkg:2500")],
-        [InlineKeyboardButton(text="🔙 بازگشت", callback_data="menu:back")],
-    ])
+# Each gift: (emoji, stars_count, product_key)
+_STARS_GIFTS = [
+    ("💖", 15,  "stars_gift_heart_15"),
+    ("🧸", 50,  "stars_gift_bear_50"),
+    ("🎁", 25,  "stars_gift_present_25"),
+    ("📱", 25,  "stars_gift_phone_25"),
+    ("🎂", 50,  "stars_gift_cake_50"),
+    ("🌷", 50,  "stars_gift_flower_50"),
+    ("🍾", 50,  "stars_gift_champagne_50"),
+    ("🚀", 50,  "stars_gift_rocket_50"),
+    ("💝", 100, "stars_gift_ribbon_100"),
+    ("💍", 100, "stars_gift_ring_100"),
+]
+# Special diamond gift (full-width button at bottom)
+_DIAMOND_GIFT = ("💎", 100, "stars_gift_diamond_100")
 
 
-# ─── Virtual Numbers ────────────────────────────────────────────────
+async def stars_gift_items_kb() -> InlineKeyboardMarkup:
+    """Build the 2-column Stars Gifts keyboard with dynamic DB prices."""
+    from database.db import get_all_product_prices
+    from utils.pricing import price_display
 
-def virtual_country_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🇮🇷 ایران", callback_data="vn:country:iran")],
-        [InlineKeyboardButton(text="🇺🇸 آمریکا", callback_data="vn:country:usa")],
-        [InlineKeyboardButton(text="🇬🇧 بریتانیا", callback_data="vn:country:uk")],
-        [InlineKeyboardButton(text="🇩🇪 آلمان", callback_data="vn:country:germany")],
-        [InlineKeyboardButton(text="🔙 بازگشت", callback_data="menu:back")],
-    ])
+    price_rows = await get_all_product_prices()
+    price_map = {row["product_key"]: float(row["usd_price"]) for row in price_rows}
+    builder = InlineKeyboardBuilder()
+
+    # Build 2-column rows for the standard gifts
+    for i in range(0, len(_STARS_GIFTS), 2):
+        row_buttons = []
+        for j in range(2):
+            if i + j >= len(_STARS_GIFTS):
+                break
+            emoji, stars_count, pkey = _STARS_GIFTS[i + j]
+            usd = price_map.get(pkey, 0.0)
+            toman_str = await price_display(usd)
+            # Extract numeric toman value (e.g. "۵۹,۰۰۰ تومان" → "۵۹,۰۰۰")
+            toman_num = toman_str.replace(" تومان", "")
+            row_buttons.append(InlineKeyboardButton(
+                text=f"{emoji} {toman_num} تومان - ⭐️ {stars_count}",
+                callback_data=f"stars_gift:item:{pkey}"
+            ))
+        builder.row(*row_buttons)
+
+    # Diamond gift — full-width button
+    d_emoji, d_stars, d_pkey = _DIAMOND_GIFT
+    d_usd = price_map.get(d_pkey, 0.0)
+    d_toman_str = await price_display(d_usd)
+    d_toman_num = d_toman_str.replace(" تومان", "")
+    builder.row(InlineKeyboardButton(
+        text=f"{d_emoji} گیفت الماس ({d_toman_num} تومان) - ⭐️ {d_stars}",
+        callback_data=f"stars_gift:item:{d_pkey}"
+    ))
+
+    # Back button
+    builder.row(InlineKeyboardButton(text="🔙 برگشت ↩️", callback_data="menu:back"))
+
+    return builder.as_markup()
+
 
 
 # ─── AI Accounts ────────────────────────────────────────────────────
@@ -221,15 +169,26 @@ def ai_platform_kb() -> InlineKeyboardMarkup:
     ])
 
 
-# ─── Design Services ────────────────────────────────────────────────
+# ─── Design Services (Category → Tier) ────────────────────────────
 
-def design_tier_kb() -> InlineKeyboardMarkup:
+def design_category_kb() -> InlineKeyboardMarkup:
+    """Show the 3 design sub-categories: Video, Photo, Logo."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="1️⃣ طراحی با هوش مصنوعی", callback_data="design:tier:ai")],
-        [InlineKeyboardButton(text="2️⃣ طراحی ساده", callback_data="design:tier:simple")],
-        [InlineKeyboardButton(text="3️⃣ طراحی حرفه‌ای", callback_data="design:tier:normal")],
-        [InlineKeyboardButton(text="4️⃣ طراحی ویژه", callback_data="design:tier:special")],
+        [InlineKeyboardButton(text="🎬 ویدیو", callback_data="design:cat:video")],
+        [InlineKeyboardButton(text="🖼 عکس", callback_data="design:cat:photo")],
+        [InlineKeyboardButton(text="✏️ لوگو", callback_data="design:cat:logo")],
         [InlineKeyboardButton(text="🔙 بازگشت", callback_data="menu:back")],
+    ])
+
+
+def design_tier_kb(category: str = "video") -> InlineKeyboardMarkup:
+    """Show 4 quality tiers for a given design category."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 با هوش مصنوعی", callback_data=f"design:tier:{category}:ai")],
+        [InlineKeyboardButton(text="📝 ساده", callback_data=f"design:tier:{category}:simple")],
+        [InlineKeyboardButton(text="⭐ حرفه‌ای", callback_data=f"design:tier:{category}:pro")],
+        [InlineKeyboardButton(text="💎 ویژه", callback_data=f"design:tier:{category}:special")],
+        [InlineKeyboardButton(text="🔙 بازگشت", callback_data="design:back_to_categories")],
     ])
 
 

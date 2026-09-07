@@ -100,7 +100,6 @@ def register_routers(dispatcher: Dispatcher) -> None:
     from handlers.rate import router as rate_router
     from handlers.premium import router as premium_router
     from handlers.stars import router as stars_router
-    from handlers.virtual_numbers import router as vn_router
     from handlers.ai_accounts import router as ai_router
     from handlers.design import router as design_router
     from handlers.page_security import router as security_router
@@ -119,7 +118,6 @@ def register_routers(dispatcher: Dispatcher) -> None:
         ticket_router,     # Ticket system (reply keyboard triggers)
         premium_router,
         stars_router,
-        vn_router,
         ai_router,
         design_router,
         security_router,

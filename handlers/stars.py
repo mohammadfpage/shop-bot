@@ -23,7 +23,7 @@ from utils.zarinpal import request_payment
 from database.db import create_order, create_payment, update_payment_authority, get_price_or_default
 from keyboards.inline import (
     stars_target_kb,
-    stars_gift_package_kb,
+    stars_gift_items_kb,
     pay_link_kb,
     back_to_menu_kb,
     main_menu_kb,
@@ -229,54 +229,77 @@ async def _stars_payment_msg(message: Message, state: FSMContext) -> None:
 #  STARS GIFTS (Fixed Packages)
 # ══════════════════════════════════════════════════════════════════════
 
-# Mapping from gift package stars count to config price key
-_GIFT_PACKAGE_MAP: dict[int, str] = {
-    50:    "telegram_stars_gift_50",
-    100:   "telegram_stars_gift_100",
-    250:   "telegram_stars_gift_250",
-    500:   "telegram_stars_gift_500",
-    1000:  "telegram_stars_gift_1000",
-    2500:  "telegram_stars_gift_2500",
+# Mapping from product_key to stars count (for order details)
+_GIFT_STARS_MAP: dict[str, int] = {
+    "stars_gift_heart_15": 15,
+    "stars_gift_bear_50": 50,
+    "stars_gift_present_25": 25,
+    "stars_gift_phone_25": 25,
+    "stars_gift_cake_50": 50,
+    "stars_gift_flower_50": 50,
+    "stars_gift_champagne_50": 50,
+    "stars_gift_rocket_50": 50,
+    "stars_gift_ribbon_100": 100,
+    "stars_gift_ring_100": 100,
+    "stars_gift_diamond_100": 100,
+}
+
+# Mapping from product_key to emoji (for order details)
+_GIFT_EMOJI_MAP: dict[str, str] = {
+    "stars_gift_heart_15": "💖",
+    "stars_gift_bear_50": "🧸",
+    "stars_gift_present_25": "🎁",
+    "stars_gift_phone_25": "📱",
+    "stars_gift_cake_50": "🎂",
+    "stars_gift_flower_50": "🌷",
+    "stars_gift_champagne_50": "🍾",
+    "stars_gift_rocket_50": "🚀",
+    "stars_gift_ribbon_100": "💝",
+    "stars_gift_ring_100": "💍",
+    "stars_gift_diamond_100": "💎",
 }
 
 
 @router.callback_query(F.data == "menu:stars_gift")
 async def cb_enter_stars_gift(callback: CallbackQuery, state: FSMContext) -> None:
-    """Show the fixed gift package selection."""
+    """Show the individual stars gifts grid."""
     await state.set_state(TelegramStarsGiftStates.choose_package)
+    kb = await stars_gift_items_kb()
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            "🎁 <b>گیفت استارز تلگرام</b>\n\n"
-            "یک پکیج هدیه را انتخاب کنید:\n"
+            "🎁 <b>گیفت‌های استارز تلگرام</b>\n\n"
+            "یک گیفت را انتخاب کنید:\n"
             "<i>لینک هدیه پس از پرداخت برای شما ارسال می‌شود.</i>",
-            reply_markup=stars_gift_package_kb(),
+            reply_markup=kb,
         )
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("stars_gift:pkg:"), TelegramStarsGiftStates.choose_package)
-async def cb_stars_gift_package(callback: CallbackQuery, state: FSMContext) -> None:
-    """Handle gift package selection and initiate payment."""
-    stars_count = int(callback.data.split(":")[2])
+@router.callback_query(F.data.startswith("stars_gift:item:"), TelegramStarsGiftStates.choose_package)
+async def cb_stars_gift_item(callback: CallbackQuery, state: FSMContext) -> None:
+    """Handle individual gift item selection and initiate payment."""
+    product_key = callback.data.split(":", 2)[2]
 
-    price_key = _GIFT_PACKAGE_MAP.get(stars_count)
-    if not price_key:
-        await callback.answer("⚠️ پکیج نامعتبر.", show_alert=True)
+    stars_count = _GIFT_STARS_MAP.get(product_key)
+    if not stars_count:
+        await callback.answer("⚠️ گیفت نامعتبر.", show_alert=True)
         return
 
-    usd_price = await get_price_or_default(price_key)
+    emoji = _GIFT_EMOJI_MAP.get(product_key, "🎁")
+
+    usd_price = await get_price_or_default(product_key)
     final_irt, rate = await price_display_raw(usd_price)
 
     order_id = await create_order(
         user_id=callback.from_user.id,
-        product=f"گیفت استارز ×{stars_count}",
-        details=f"لینک هدیه — {stars_count} استارز",
+        product=f"گیفت استارز {emoji} ×{stars_count}",
+        details=f"لینک هدیه — {stars_count} استارز — {product_key}",
         amount_irt=final_irt,
     )
 
     result = await request_payment(
         amount_irt=final_irt,
-        description=f"گیفت {stars_count} استارز تلگرام",
+        description=f"گیفت {stars_count} استارز تلگرام {emoji}",
     )
 
     if not result.success or not result.authority:
@@ -302,7 +325,7 @@ async def cb_stars_gift_package(callback: CallbackQuery, state: FSMContext) -> N
     rate_str = f"{rate:,.0f}".replace(",", "،")
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            f"💳 <b>پرداخت: گیفت {stars_count} استارز</b>\n\n"
+            f"💳 <b>پرداخت: گیفت {emoji} {stars_count} استارز</b>\n\n"
             f"💱 نرخ ارز: ۱ دلار = {rate_str} تومان\n"
             f"💰 مبلغ کل: <b>{final_irt:,} تومان</b>\n\n"
             "برای پرداخت روی دکمه زیر کلیک کنید:",
@@ -314,13 +337,14 @@ async def cb_stars_gift_package(callback: CallbackQuery, state: FSMContext) -> N
 
 @router.callback_query(F.data == "stars_gift:back")
 async def cb_stars_gift_back(callback: CallbackQuery, state: FSMContext) -> None:
-    """Return to gift package selection."""
+    """Return to gift item selection."""
     await state.set_state(TelegramStarsGiftStates.choose_package)
+    kb = await stars_gift_items_kb()
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            "🎁 <b>گیفت استارز تلگرام</b>\n\n"
-            "یک پکیج هدیه را انتخاب کنید:\n"
+            "🎁 <b>گیفت‌های استارز تلگرام</b>\n\n"
+            "یک گیفت را انتخاب کنید:\n"
             "<i>لینک هدیه پس از پرداخت برای شما ارسال می‌شود.</i>",
-            reply_markup=stars_gift_package_kb(),
+            reply_markup=kb,
         )
     await callback.answer()

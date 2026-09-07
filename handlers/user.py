@@ -62,7 +62,6 @@ async def cmd_start(message: Message) -> None:
         "📦 <b>خدمات ما:</b>\n"
         "⭐ تلگرام پرمیوم (ماهانه تا سالانه)\n"
         "🎁 گیفت و استارز تلگرام\n"
-        "📱 شماره مجازی کشورهای مختلف\n"
         "🤖 اکانت پرمیوم هوش مصنوعی\n"
         "🎨 خدمات طراحی حرفه‌ای\n"
         "🛡 امنیت صفحه و اکانت\n"
@@ -198,17 +197,6 @@ async def cb_menu_premium(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-@router.callback_query(F.data == "menu:virtual")
-async def cb_menu_virtual(callback: CallbackQuery) -> None:
-    from keyboards.inline import virtual_country_kb
-    with contextlib.suppress(TelegramBadRequest):
-        await callback.message.edit_text(
-            "📱 <b>شماره مجازی</b>\nیک کشور را انتخاب کنید:",
-            reply_markup=virtual_country_kb(),
-        )
-    await callback.answer()
-
-
 @router.callback_query(F.data == "menu:ai_accounts")
 async def cb_menu_ai(callback: CallbackQuery) -> None:
     from keyboards.inline import ai_platform_kb
@@ -222,11 +210,11 @@ async def cb_menu_ai(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "menu:design")
 async def cb_menu_design(callback: CallbackQuery) -> None:
-    from keyboards.inline import design_tier_kb
+    from keyboards.inline import design_category_kb
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            "🎨 <b>خدمات طراحی</b>\nیک سطح خدمات را انتخاب کنید:",
-            reply_markup=design_tier_kb(),
+            "🎨 <b>خدمات طراحی</b>\nیک دسته را انتخاب کنید:",
+            reply_markup=design_category_kb(),
         )
     await callback.answer()
 

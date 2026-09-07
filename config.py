@@ -19,8 +19,10 @@ def _parse_admin_ids() -> list[int]:
 @dataclass
 class Config:
     # ─── Bot ────────────────────────────────────────────────────────────
-    BOT_TOKEN: str = '8494498767:AAEfmbtnX89gngZbWPjkb3mMaTFfwVhphwY'
+    # BOT_TOKEN: str = '8494498767:AAEfmbtnX89gngZbWPjkb3mMaTFfwVhphwY'
 
+    # darkan
+    BOT_TOKEN: str = '8604678746:AAGkRTkqZ-RWYCYSx3ouJBhg12lKZOsJvuo'
     # ─── Admin (read from ADMIN_IDS env var, comma-separated) ───────────
     ADMIN_IDS: list[int] = field(default_factory=_parse_admin_ids)
 
@@ -72,18 +74,40 @@ class Config:
         "telegram_stars_gift_1000": 19.99,
         "telegram_stars_gift_2500": 49.99,
 
-        # Virtual Numbers
-        "virtual_number": 3.50,
-
         # AI Accounts
         "chatgpt_premium": 19.99,
         "gemini_premium": 14.99,
 
-        # Design Service Tiers
-        "design_ai": 9.99,
-        "design_simple": 19.99,
-        "design_normal": 39.99,
-        "design_special": 79.99,
+        # Design Services — Video (ویدیو)
+        "design_video_ai": 9.99,
+        "design_video_simple": 19.99,
+        "design_video_pro": 39.99,
+        "design_video_special": 79.99,
+
+        # Design Services — Photo (عکس)
+        "design_photo_ai": 7.99,
+        "design_photo_simple": 14.99,
+        "design_photo_pro": 29.99,
+        "design_photo_special": 59.99,
+
+        # Design Services — Logo (لوگو)
+        "design_logo_ai": 12.99,
+        "design_logo_simple": 24.99,
+        "design_logo_pro": 49.99,
+        "design_logo_special": 99.99,
+
+        # Stars Gifts (individual items)
+        "stars_gift_heart_15": 0.49,
+        "stars_gift_bear_50": 1.49,
+        "stars_gift_present_25": 0.99,
+        "stars_gift_phone_25": 0.99,
+        "stars_gift_cake_50": 1.49,
+        "stars_gift_flower_50": 1.49,
+        "stars_gift_champagne_50": 1.49,
+        "stars_gift_rocket_50": 1.49,
+        "stars_gift_ribbon_100": 2.99,
+        "stars_gift_ring_100": 2.99,
+        "stars_gift_diamond_100": 3.99,
     })
 
     # ─── Human-readable product labels (Persian) ────────────────────────
@@ -99,13 +123,35 @@ class Config:
         "telegram_stars_gift_500": "گیفت ۵۰۰ استارز",
         "telegram_stars_gift_1000": "گیفت ۱۰۰۰ استارز",
         "telegram_stars_gift_2500": "گیفت ۲۵۰۰ استارز",
-        "virtual_number": "شماره مجازی",
         "chatgpt_premium": "چت‌جی‌پی‌تی پلاس",
         "gemini_premium": "جمنای پیشرفته",
-        "design_ai": "طراحی هوش مصنوعی",
-        "design_simple": "طراحی ساده",
-        "design_normal": "طراحی حرفه‌ای",
-        "design_special": "طراحی ویژه",
+        # Design — Video
+        "design_video_ai": "ویدیو — هوش مصنوعی",
+        "design_video_simple": "ویدیو — ساده",
+        "design_video_pro": "ویدیو — حرفه‌ای",
+        "design_video_special": "ویدیو — ویژه",
+        # Design — Photo
+        "design_photo_ai": "عکس — هوش مصنوعی",
+        "design_photo_simple": "عکس — ساده",
+        "design_photo_pro": "عکس — حرفه‌ای",
+        "design_photo_special": "عکس — ویژه",
+        # Design — Logo
+        "design_logo_ai": "لوگو — هوش مصنوعی",
+        "design_logo_simple": "لوگو — ساده",
+        "design_logo_pro": "لوگو — حرفه‌ای",
+        "design_logo_special": "لوگو — ویژه",
+        # Stars Gifts (individual)
+        "stars_gift_heart_15": "گیفت قلب ❤️ ۱۵ استارز",
+        "stars_gift_bear_50": "گیفت خرس 🧸 ۵۰ استارز",
+        "stars_gift_present_25": "گیفت هدیه 🎁 ۲۵ استارز",
+        "stars_gift_phone_25": "گیفت گوشی 📱 ۲۵ استارز",
+        "stars_gift_cake_50": "گیفت کیک 🎂 ۵۰ استارز",
+        "stars_gift_flower_50": "گیفت گل 🌷 ۵۰ استارز",
+        "stars_gift_champagne_50": "گیفت شامپاین 🍾 ۵۰ استارز",
+        "stars_gift_rocket_50": "گیفت موشک 🚀 ۵۰ استارز",
+        "stars_gift_ribbon_100": "گیفت روبان 💝 ۱۰۰ استارز",
+        "stars_gift_ring_100": "گیفت انگشتر 💍 ۱۰۰ استارز",
+        "stars_gift_diamond_100": "گیفت الماس 💎 ۱۰۰ استارز",
     })
 
     # ─── Service Tariffs (page security) ───────────────────────────────

@@ -1,6 +1,6 @@
 """
 Handler: Design Services workflow.
-Flow: choose_tier → enter_description → enter_contact → payment
+Flow: choose_category → choose_tier → enter_description → enter_contact → payment
 All user-facing text in Persian (فارسی).
 """
 
@@ -16,6 +16,7 @@ from utils.pricing import price_display, price_display_raw
 from utils.zarinpal import request_payment
 from database.db import create_order, create_payment, update_payment_authority, get_price_or_default
 from keyboards.inline import (
+    design_category_kb,
     design_tier_kb,
     back_to_menu_kb,
     pay_link_kb,
@@ -23,36 +24,101 @@ from keyboards.inline import (
 
 router = Router(name="design")
 
-_TIER_INFO = {
-    "ai": ("طراحی با هوش مصنوعی", "design_ai"),
-    "simple": ("طراحی ساده", "design_simple"),
-    "normal": ("طراحی حرفه‌ای", "design_normal"),
-    "special": ("طراحی ویژه", "design_special"),
+# Category display names
+_CATEGORY_NAMES = {
+    "video": "ویدیو",
+    "photo": "عکس",
+    "logo": "لوگو",
 }
 
+# Tier display names
+_TIER_NAMES = {
+    "ai": "با هوش مصنوعی",
+    "simple": "ساده",
+    "pro": "حرفه‌ای",
+    "special": "ویژه",
+}
+
+# Product key pattern: design_{category}_{tier}
 _TIER_DESCRIPTIONS = {
     "ai": "طراحی خودکار با هوش مصنوعی به همراه بازبینی توسط کارشناس.",
     "simple": "طراحی پایه دستی — لوگو، بنر یا پست شبکه اجتماعی.",
-    "normal": "طراحی حرفه‌ای چندعنصری با امکان اصلاحات.",
+    "pro": "طراحی حرفه‌ای چندعنصری با امکان اصلاحات.",
     "special": "پکیج طراحی سفارشی ویژه با پشتیبانی اولویت‌دار.",
 }
 
 
-# ─── Choose tier ─────────────────────────────────────────────────────
+# ─── Choose category ─────────────────────────────────────────────
 
-@router.callback_query(F.data.startswith("design:tier:"))
-async def cb_design_tier(callback: CallbackQuery, state: FSMContext) -> None:
-    tier = callback.data.split(":")[2]
-    if tier not in _TIER_INFO:
-        await callback.answer("سطح نامعتبر", show_alert=True)
+@router.callback_query(F.data == "menu:design")
+async def cb_menu_design(callback: CallbackQuery) -> None:
+    with contextlib.suppress(TelegramBadRequest):
+        await callback.message.edit_text(
+            "🎨 <b>خدمات طراحی</b>\nیک دسته را انتخاب کنید:",
+            reply_markup=design_category_kb(),
+        )
+    await callback.answer()
+
+
+# ─── Choose tier (within category) ──────────────────────────────
+
+@router.callback_query(F.data.startswith("design:cat:"))
+async def cb_design_category(callback: CallbackQuery, state: FSMContext) -> None:
+    category = callback.data.split(":")[2]
+    if category not in _CATEGORY_NAMES:
+        await callback.answer("دسته نامعتبر", show_alert=True)
         return
 
-    label, product_key = _TIER_INFO[tier]
+    cat_name = _CATEGORY_NAMES[category]
+    await state.update_data(design_category=category)
+    await state.set_state(DesignServiceStates.choose_tier)
+
+    with contextlib.suppress(TelegramBadRequest):
+        await callback.message.edit_text(
+            f"🎨 <b>خدمات طراحی — {cat_name}</b>\nیک سطح کیفیت را انتخاب کنید:",
+            reply_markup=design_tier_kb(category),
+        )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "design:back_to_categories")
+async def cb_design_back_to_categories(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    with contextlib.suppress(TelegramBadRequest):
+        await callback.message.edit_text(
+            "🎨 <b>خدمات طراحی</b>\nیک دسته را انتخاب کنید:",
+            reply_markup=design_category_kb(),
+        )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("design:tier:"), DesignServiceStates.choose_tier)
+async def cb_design_tier(callback: CallbackQuery, state: FSMContext) -> None:
+    parts = callback.data.split(":")
+    # design:tier:{category}:{tier}
+    category = parts[2]
+    tier = parts[3]
+
+    if category not in _CATEGORY_NAMES or tier not in _TIER_NAMES:
+        await callback.answer("گزینه نامعتبر", show_alert=True)
+        return
+
+    product_key = f"design_{category}_{tier}"
+    cat_name = _CATEGORY_NAMES[category]
+    tier_name = _TIER_NAMES[tier]
+    label = f"{cat_name} — {tier_name}"
     desc = _TIER_DESCRIPTIONS[tier]
     usd = await get_price_or_default(product_key)
     price_str = await price_display(usd)
 
-    await state.update_data(tier=tier, product=label, product_usd=usd, description="")
+    await state.update_data(
+        tier=tier,
+        category=category,
+        product=label,
+        product_key=product_key,
+        product_usd=usd,
+        description="",
+    )
     await state.set_state(DesignServiceStates.enter_description)
 
     with contextlib.suppress(TelegramBadRequest):
@@ -67,7 +133,7 @@ async def cb_design_tier(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
-# ─── Enter project description ──────────────────────────────────────
+# ─── Enter project description ──────────────────────────────────
 
 @router.message(DesignServiceStates.enter_description)
 async def msg_design_description(message: Message, state: FSMContext) -> None:
@@ -80,13 +146,13 @@ async def msg_design_description(message: Message, state: FSMContext) -> None:
     await state.set_state(DesignServiceStates.enter_contact)
 
     await message.answer(
-        "📞 چگونه مدیر می‌تواند با شما ارتباط بگیرد؟\n"
+        "📞 چگونه مدیر می‌تواند با شما ارتباط بگیرد?\n"
         "نام کاربری <b>تلگرام</b> یا <b>شماره تماس</b> خود را ارسال کنید.",
         reply_markup=back_to_menu_kb(),
     )
 
 
-# ─── Enter contact info ─────────────────────────────────────────────
+# ─── Enter contact info ─────────────────────────────────────────
 
 @router.message(DesignServiceStates.enter_contact)
 async def msg_design_contact(message: Message, state: FSMContext) -> None:

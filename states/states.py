@@ -33,14 +33,6 @@ class TelegramStarsGiftStates(StatesGroup):
     payment = State()
 
 
-# ─── Virtual Numbers ─────────────────────────────────────────────────
-class VirtualNumberStates(StatesGroup):
-    """Choose country → pay → receive number."""
-    choose_country = State()
-    payment = State()
-    receive_number = State()
-
-
 # ─── AI Accounts (ChatGPT & Gemini) ──────────────────────────────────
 class AIAccountStates(StatesGroup):
     """Choose platform → pay → auto-deliver credentials."""

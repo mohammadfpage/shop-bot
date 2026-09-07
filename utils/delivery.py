@@ -18,7 +18,6 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from config import config
 from database.db import get_order
-from utils.virtual_api import fetch_virtual_number
 from keyboards.inline import back_to_menu_kb
 
 logger = logging.getLogger(__name__)
@@ -40,8 +39,6 @@ async def deliver_product(
     try:
         if "ChatGPT" in product or "Gemini" in product:
             await _deliver_ai_account(bot, user_id, order_id, product)
-        elif "شماره مجازی" in product or "Virtual Number" in product:
-            await _deliver_virtual_number(bot, user_id, order_id, product, extra)
         elif "طراحی" in product or "Design" in product:
             await _deliver_design(bot, user_id, order_id, product, details)
         else:
@@ -81,31 +78,6 @@ async def _deliver_ai_account(bot: Bot, user_id: int, order_id: int, product: st
             f"✅ پرداخت موفق!\n\n"
             f"⚠️ در حال حاضر اطلاعات ورود موجود نیست. "
             f"مدیر ما {product} شما را به زودی تحویل خواهد داد.",
-        )
-
-
-async def _deliver_virtual_number(
-    bot: Bot, user_id: int, order_id: int, product: str, extra: dict
-) -> None:
-    country = extra.get("country", "iran")
-    result = await fetch_virtual_number(country)
-
-    if result.success:
-        await _safe_send(
-            bot,
-            user_id,
-            f"🎉 <b>پرداخت موفق!</b>\n\n"
-            f"📱 شماره مجازی شما ({result.country}):\n"
-            f"<code>{result.number}</code>\n\n"
-            "از این شماره برای تأیید هویت استفاده کنید.",
-        )
-    else:
-        await _safe_send(
-            bot,
-            user_id,
-            f"✅ پرداخت موفق!\n\n"
-            f"⚠️ دریافت شماره در حال حاضر ممکن نیست: {result.message}\n"
-            "مدیر ما آن را به زودی تحویل خواهد داد.",
         )
 
 
