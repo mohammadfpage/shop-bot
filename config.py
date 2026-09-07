@@ -22,7 +22,7 @@ class Config:
     # BOT_TOKEN: str = '8494498767:AAEfmbtnX89gngZbWPjkb3mMaTFfwVhphwY'
 
     # darkan
-    BOT_TOKEN: str = '8604678746:AAGkRTkqZ-RWYCYSx3ouJBhg12lKZOsJvuo'
+    BOT_TOKEN: str = '8494498767:AAEfmbtnX89gngZbWPjkb3mMaTFfwVhphwY'
     # ─── Admin (read from ADMIN_IDS env var, comma-separated) ───────────
     ADMIN_IDS: list[int] = field(default_factory=_parse_admin_ids)
 
