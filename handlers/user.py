@@ -20,6 +20,7 @@ from keyboards.reply import main_reply_kb
 from keyboards.admin_reply import admin_reply_kb
 from keyboards.callback_data import WelcomeCallback
 from filters import IsAdmin
+from utils.emojis import get_pe
 
 router = Router(name="user")
 
@@ -45,45 +46,45 @@ async def cmd_start(message: Message) -> None:
     is_admin = await IsAdmin()(message)
 
     text = (
-        f"👋 <b>سلام {message.from_user.first_name} عزیز!</b>\n\n"
+        f"{get_pe('wave')} <b>سلام {message.from_user.first_name} عزیز!</b>\n\n"
 
         "━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "🤖 <b>فروشگاه هوشمند تلگرام</b>\n"
+        f"{get_pe('bot')} <b>فروشگاه هوشمند تلگرام</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
 
-        "🌟 <b>چرا ما؟</b>\n"
-        "✅ تحویل <b>خودکار و آنی</b> پس از پرداخت\n"
-        "🕐 پشتیبانی <b>۲۴ ساعته</b> در ۷ روز هفته\n"
-        "💳 پرداخت <b>امن</b> از طریق زرین‌پال\n"
-        "💰 قیمت‌های <b>رقابتی</b> با نرخ لحظه‌ای ارز\n"
-        "🔒 <b>گارانتی</b> کیفیت تمامی خدمات\n\n"
+        f"{get_pe('sparkles')} <b>چرا ما؟</b>\n"
+        f"{get_pe('check')} تحویل <b>خودکار و آنی</b> پس از پرداخت\n"
+        f"{get_pe('call')} پشتیبانی <b>۲۴ ساعته</b> در ۷ روز هفته\n"
+        f"{get_pe('card')} پرداخت <b>امن</b> از طریق زرین‌پال\n"
+        f"{get_pe('money')} قیمت‌های <b>رقابتی</b> با نرخ لحظه‌ای ارز\n"
+        f"{get_pe('lock')} <b>گارانتی</b> کیفیت تمامی خدمات\n\n"
 
         "━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "📦 <b>خدمات ما:</b>\n"
-        "⭐ تلگرام پرمیوم (ماهانه تا سالانه)\n"
-        "🎁 گیفت و استارز تلگرام\n"
-        "🤖 اکانت پرمیوم هوش مصنوعی\n"
-        "🎨 خدمات طراحی حرفه‌ای\n"
-        "🛡 امنیت صفحه و اکانت\n"
+        f"{get_pe('box')} <b>خدمات ما:</b>\n"
+        f"{get_pe('star')} تلگرام پرمیوم (ماهانه تا سالانه)\n"
+        f"{get_pe('gift')} گیفت و استارز تلگرام\n"
+        f"{get_pe('bot')} اکانت پرمیوم هوش مصنوعی\n"
+        f"{get_pe('fire')} خدمات طراحی حرفه‌ای\n"
+        f"{get_pe('shield')} امنیت صفحه و اکانت\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━"
     )
 
     if is_admin:
         text += (
-            "\n👑 <b>شما به عنوان مدیر شناخته شدید.</b>\n"
+            f"\n{get_pe('medal')} <b>شما به عنوان مدیر شناخته شدید.</b>\n"
             "برای ورود به پنل مدیریت دستور /admin را ارسال کنید."
         )
         # Admins get: welcome text + inline quick actions + admin reply keyboard
         await message.answer(text, reply_markup=welcome_inline_kb())
         await message.answer(
-            "⚙️ <b>پنل مدیریت</b>\nاز دکمه زیر استفاده کنید:",
+            f"{get_pe('gear')} <b>پنل مدیریت</b>\nاز دکمه زیر استفاده کنید:",
             reply_markup=admin_reply_kb(),
         )
     else:
         # Regular users get: welcome text + inline quick actions + user reply keyboard
         await message.answer(text, reply_markup=welcome_inline_kb())
         await message.answer(
-            "👇 از منوی زیر استفاده کنید:",
+            f"{get_pe('down')} از منوی زیر استفاده کنید:",
             reply_markup=main_reply_kb(),
         )
 
@@ -93,9 +94,10 @@ async def cmd_start(message: Message) -> None:
 @router.callback_query(WelcomeCallback.filter(F.action == "categories"))
 async def cb_welcome_categories(callback: CallbackQuery) -> None:
     """Show the main shop menu with all product categories."""
+    await callback.answer()
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            "🏠 <b>دسته‌بندی خدمات</b>\nیک سرویس را انتخاب کنید:",
+            f"{get_pe('home')} <b>دسته‌بندی خدمات</b>\nیک سرویس را انتخاب کنید:",
             reply_markup=await main_menu_kb(),
         )
     await callback.answer()
@@ -104,16 +106,17 @@ async def cb_welcome_categories(callback: CallbackQuery) -> None:
 @router.callback_query(WelcomeCallback.filter(F.action == "deals"))
 async def cb_welcome_deals(callback: CallbackQuery) -> None:
     """Show special offers / discounts."""
+    await callback.answer()
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            "🔥 <b>تخفیف‌های ویژه</b>\n\n"
-            "🎯 <b>پکیج پرمیوم تلگرام + استارز</b>\n"
+            f"{get_pe('fire')} <b>تخفیف‌های ویژه</b>\n\n"
+            f"{get_pe('diamond')} <b>پکیج پرمیوم تلگرام + استارز</b>\n"
             "   خرید اشتراک سالانه + ۵۰۰ استارز با ۱۵٪ تخفیف\n\n"
-            "🎯 <b>اکانت هوش مصنوعی</b>\n"
+            f"{get_pe('bot')} <b>اکانت هوش مصنوعی</b>\n"
             "   خرید همزمان ChatGPT + Gemini با ۱۰٪ تخفیف\n\n"
-            "💡 برای بهره‌مندی از تخفیف‌ها، محصول مورد نظر را "
+            f"{get_pe('star')} برای بهره‌مندی از تخفیف‌ها، محصول مورد نظر را "
             "از منوی خرید انتخاب کنید.\n\n"
-            "⏰ تخفیف‌ها محدود هستند!",
+            f"{get_pe('calendar')} تخفیف‌ها محدود هستند!",
             reply_markup=back_to_menu_kb(),
         )
     await callback.answer()
@@ -121,18 +124,18 @@ async def cb_welcome_deals(callback: CallbackQuery) -> None:
 
 # ─── Reply keyboard: 🛍 فروشگاه ────────────────────────────────────
 
-@router.message(F.text == "🛍 فروشگاه")
+@router.message(F.text.contains("فروشگاه"))
 async def reply_btn_shop(message: Message) -> None:
     """Show the inline shop menu when the user taps the shop button."""
     await message.answer(
-        "🏠 <b>منوی خرید</b>\nیک سرویس را انتخاب کنید:",
+        f"{get_pe('home')} <b>منوی خرید</b>\nیک سرویس را انتخاب کنید:",
         reply_markup=await main_menu_kb(),
     )
 
 
 # ─── Reply keyboard: 👤 پروفایل ────────────────────────────────────
 
-@router.message(F.text == "👤 پروفایل")
+@router.message(F.text.contains("پروفایل"))
 async def reply_btn_profile(message: Message) -> None:
     """Show the user's profile information."""
     user = await get_or_create_user(
@@ -145,18 +148,18 @@ async def reply_btn_profile(message: Message) -> None:
     admin_badg = " | 🛡 مدیر" if user["is_admin"] else ""
 
     text = (
-        f"👤 <b>پروفایل من</b>\n\n"
+        f"{get_pe('user')} <b>پروفایل من</b>\n\n"
         f"🆔 شناسه: <code>{user['user_id']}</code>\n"
         f"📛 نام: {user['full_name']}\n"
-        f"👤 یوزرنیم: {username_display}{admin_badg}\n"
-        f"📅 تاریخ عضویت: {user['joined_at'][:10] if user['joined_at'] else '—'}"
+        f"{get_pe('user')} یوزرنیم: {username_display}{admin_badg}\n"
+        f"{get_pe('calendar')} تاریخ عضویت: {user['joined_at'][:10] if user['joined_at'] else '—'}"
     )
     await message.answer(text, reply_markup=main_reply_kb())
 
 
 # ─── Reply keyboard: 🎧 پشتیبانی ───────────────────────────────────
 
-@router.message(F.text == "🎧 پشتیبانی")
+@router.message(F.text.contains("پشتیبانی"))
 async def reply_btn_support(message: Message) -> None:
     """Redirect to the ticket system."""
     # Import here to avoid circular imports
@@ -164,21 +167,44 @@ async def reply_btn_support(message: Message) -> None:
     # Trigger the ticket flow by sending the same message through the ticket handler
     # We just show a brief instruction since the ticket handler catches the text
     await message.answer(
-        "🎧 <b>پشتیبانی</b>\n\n"
-        "📌 برای ارسال تیکت پشتیبانی، پیام خود را ارسال کنید.\n"
+        f"{get_pe('call')} <b>پشتیبانی</b>\n\n"
+        f"{get_pe('ticket')} برای ارسال تیکت پشتیبانی، پیام خود را ارسال کنید.\n"
         "پیام شما مستقیماً به تیم پشتیبانی ارسال خواهد شد.\n\n"
-        "💡 اگر سؤالی دارید، پیام خود را بنویسید و ارسال کنید.",
+        f"{get_pe('star')} اگر سؤالی دارید، پیام خود را بنویسید و ارسال کنید.",
         reply_markup=main_reply_kb(),
     )
+
+
+# ─── Reply keyboard: 📋 سفارشات ─────────────────────────────────
+
+@router.message(F.text.contains("سفارشات"))
+async def reply_btn_orders(message: Message) -> None:
+    """Show the user's order history when the orders button is tapped."""
+    orders = await get_user_orders(message.from_user.id)
+    if not orders:
+        await message.answer(
+            f"{get_pe('ticket')} <b>پیگیری سفارشات</b>\n\nشما هنوز سفارشی ثبت نکرده‌اید.",
+            reply_markup=main_reply_kb(),
+        )
+    else:
+        lines = [f"{get_pe('ticket')} <b>پیگیری سفارشات</b>\n"]
+        for o in orders[:10]:
+            lines.append(_format_order_line(o))
+        lines.append("\nبرای اطلاعات بیشتر روی شماره سفارش کلیک کنید.")
+        await message.answer(
+            "\n".join(lines),
+            reply_markup=main_reply_kb(),
+        )
 
 
 # ─── Back to menu ────────────────────────────────────────────────────
 
 @router.callback_query(F.data == "menu:back")
 async def cb_back_to_menu(callback: CallbackQuery) -> None:
+    await callback.answer()
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            "🏠 <b>منوی اصلی</b>\nیک سرویس را انتخاب کنید:",
+            f"{get_pe('home')} <b>منوی اصلی</b>\nیک سرویس را انتخاب کنید:",
             reply_markup=await main_menu_kb(),
         )
     await callback.answer()
@@ -188,44 +214,48 @@ async def cb_back_to_menu(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "menu:premium")
 async def cb_menu_premium(callback: CallbackQuery) -> None:
+    await callback.answer()
     from keyboards.inline import premium_duration_kb
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            "⭐ <b>تلگرام پرمیوم</b>\nیک پلن اشتراک را انتخاب کنید:",
-            reply_markup=premium_duration_kb(),
+            f"{get_pe('star')} <b>تلگرام پرمیوم</b>\nیک پلن اشتراک را انتخاب کنید:",
+            reply_markup=await premium_duration_kb(),
         )
     await callback.answer()
 
 
 @router.callback_query(F.data == "menu:ai_accounts")
 async def cb_menu_ai(callback: CallbackQuery) -> None:
+    await callback.answer()
     from keyboards.inline import ai_platform_kb
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            "🤖 <b>اکانت هوش مصنوعی پرمیوم</b>\nیک پلتفرم را انتخاب کنید:",
-            reply_markup=ai_platform_kb(),
+            f"{get_pe('bot')} <b>اکانت هوش مصنوعی پرمیوم</b>\nیک پلتفرم را انتخاب کنید:",
+            reply_markup=await ai_platform_kb(),
         )
     await callback.answer()
 
 
 @router.callback_query(F.data == "menu:design")
 async def cb_menu_design(callback: CallbackQuery) -> None:
+    await callback.answer()
     from keyboards.inline import design_category_kb
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            "🎨 <b>خدمات طراحی</b>\nیک دسته را انتخاب کنید:",
-            reply_markup=design_category_kb(),
+            f"{get_pe('fire')} <b>خدمات طراحی</b>\nیک دسته را انتخاب کنید:",
+            reply_markup=await design_category_kb(),
         )
     await callback.answer()
 
 
 @router.callback_query(F.data == "menu:security")
 async def cb_menu_security(callback: CallbackQuery) -> None:
+    await callback.answer()
     from keyboards.inline import security_tariff_kb
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            "🛡 <b>امنیت صفحه</b>\nیک تعرفه را انتخاب کنید:",
-            reply_markup=security_tariff_kb(),
+            f"{get_pe('shield')} <b>امنیت صفحه</b>\nیک تعرفه را انتخاب کنید:",
+            reply_markup=await security_tariff_kb(),
         )
     await callback.answer()
 
@@ -234,6 +264,7 @@ async def cb_menu_security(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "menu:market_rates")
 async def cb_market_rates(callback: CallbackQuery) -> None:
+    await callback.answer()
     from utils.pricing import get_market_data
 
     data = await get_market_data()
@@ -246,7 +277,7 @@ async def cb_market_rates(callback: CallbackQuery) -> None:
         await callback.answer()
         return
 
-    lines = ["📊 <b>قیمت لحظه‌ای ارزها و طلا</b>\n"]
+    lines = [f"{get_pe('chart')} <b>قیمت لحظه‌ای ارزها و طلا</b>\n"]
 
     def build_lookup(category: str) -> dict[str, dict]:
         """Index one BrsApi root array by its exact symbol value."""
@@ -327,15 +358,16 @@ async def cb_market_rates(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "menu:my_orders")
 async def cb_my_orders(callback: CallbackQuery) -> None:
+    await callback.answer()
     orders = await get_user_orders(callback.from_user.id)
     if not orders:
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(
-                "📋 <b>پیگیری سفارشات</b>\n\nشما هنوز سفارشی ثبت نکرده‌اید.",
+                f"{get_pe('ticket')} <b>پیگیری سفارشات</b>\n\nشما هنوز سفارشی ثبت نکرده‌اید.",
                 reply_markup=back_to_menu_kb(),
             )
     else:
-        lines = ["📋 <b>پیگیری سفارشات</b>\n"]
+        lines = [f"{get_pe('ticket')} <b>پیگیری سفارشات</b>\n"]
         for o in orders[:10]:  # last 10
             lines.append(_format_order_line(o))
         lines.append("\nبرای اطلاعات بیشتر روی شماره سفارش کلیک کنید.")

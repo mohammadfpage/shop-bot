@@ -2,7 +2,7 @@
 Handler: Support Ticket System.
 
 Flow:
-    1. User clicks "🎧 پشتیبانی" on reply keyboard.
+    1. User clicks "پشتیبانی" on reply keyboard.
     2. Bot prompts the user to describe their issue.
     3. User sends their message.
     4. Bot saves the ticket in the DB and forwards it to SUPPORT_ADMIN_ID.
@@ -38,6 +38,7 @@ from database.db import (
 )
 from keyboards.reply import main_reply_kb
 from keyboards.inline import back_to_menu_kb
+from utils.emojis import get_pe, get_premium_id
 
 router = Router(name="ticket")
 logger = logging.getLogger(__name__)
@@ -45,12 +46,12 @@ logger = logging.getLogger(__name__)
 
 # ─── "🎧 پشتیبانی" pressed on reply keyboard ──────────────────────
 
-@router.message(F.text == "🎧 پشتیبانی")
+@router.message(F.text.contains("پشتیبانی"))
 async def cb_ticket_start(message: Message, state: FSMContext) -> None:
     """Prompt the user to write their support message."""
     await state.set_state(TicketStates.waiting_message)
     await message.answer(
-        "🎧 <b>پشتیبانی</b>\n\n"
+        f"{get_pe('call')} <b>پشتیبانی</b>\n\n"
         "لطفاً پیام یا مشکل خود را به صورت متنی بنویسید.\n"
         "پیام شما برای پشتیبان ارسال خواهد شد.\n\n"
         "برای انصراف، روی دکمه «🔙 بازگشت به منو» کلیک کنید.",
@@ -63,6 +64,7 @@ async def cb_ticket_start(message: Message, state: FSMContext) -> None:
 @router.callback_query(F.data == "menu:back", StateFilter(TicketStates.waiting_message))
 async def cb_ticket_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     """Cancel ticket creation and return to main menu."""
+    await callback.answer()
     await state.clear()
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
@@ -94,9 +96,9 @@ async def msg_ticket_submit(message: Message, state: FSMContext) -> None:
 
     # 2) Confirm to user
     await message.answer(
-        f"✅ <b>تیکت #{ticket_id} ثبت شد!</b>\n\n"
+        f"{get_pe('check')} <b>تیکت #{ticket_id} ثبت شد!</b>\n\n"
         "پیام شما برای پشتیبان ارسال شد.\n"
-        "به زودی پاسخ دریافت خواهید کرد. 🙏",
+        f"به زودی پاسخ دریافت خواهید کرد. {get_pe('sparkles')}",
         reply_markup=main_reply_kb(),
     )
 
@@ -104,24 +106,28 @@ async def msg_ticket_submit(message: Message, state: FSMContext) -> None:
     admin_kb = InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(
-                text="📝 پاسخ به تیکت",
+                text="پاسخ به تیکت",
                 callback_data=f"ticket:reply:{ticket_id}",
+                style="success",
+                icon_custom_emoji_id=get_premium_id("call"),
             )
         ],
         [
             InlineKeyboardButton(
-                text="✅ بستن تیکت",
+                text="بستن تیکت",
                 callback_data=f"ticket:close:{ticket_id}",
+                style="danger",
+                icon_custom_emoji_id=get_premium_id("cross"),
             )
         ],
     ])
 
     admin_text = (
-        f"🎫 <b>تیکت جدید #{ticket_id}</b>\n\n"
-        f"👤 کاربر: {message.from_user.full_name}\n"
+        f"{get_pe('ticket')} <b>تیکت جدید #{ticket_id}</b>\n\n"
+        f"{get_pe('user')} کاربر: {message.from_user.full_name}\n"
         f"🆔 شناسه: <code>{message.from_user.id}</code>\n"
         f"📛 یوزرنیم: @{message.from_user.username or 'ندارد'}\n"
-        f"📅 تاریخ: {ticket_id}\n\n"
+        f"{get_pe('calendar')} تاریخ: {ticket_id}\n\n"
         f"💬 پیام:\n{text.strip()}"
     )
 
@@ -144,6 +150,7 @@ async def msg_ticket_submit(message: Message, state: FSMContext) -> None:
 @router.callback_query(F.data.startswith("ticket:reply:"))
 async def cb_admin_reply_ticket(callback: CallbackQuery, state: FSMContext) -> None:
     """Admin initiates a reply to a specific ticket."""
+    await callback.answer()
     if callback.from_user.id not in config.ADMIN_IDS:
         await callback.answer("⛔ دسترسی غیرمجاز", show_alert=True)
         return
@@ -164,8 +171,8 @@ async def cb_admin_reply_ticket(callback: CallbackQuery, state: FSMContext) -> N
     await state.update_data(reply_ticket_id=ticket_id, reply_user_id=ticket["user_id"])
 
     await callback.message.answer(
-        f"📝 <b>در حال پاسخ به تیکت #{ticket_id}</b>\n\n"
-        f"👤 کاربر: {ticket['full_name']} (<code>{ticket['user_id']}</code>)\n"
+        f"{get_pe('star')} <b>در حال پاسخ به تیکت #{ticket_id}</b>\n\n"
+        f"{get_pe('user')} کاربر: {ticket['full_name']} (<code>{ticket['user_id']}</code>)\n"
         f"💬 پیام اصلی:\n<i>{ticket['message']}</i>\n\n"
         "حالا پاسخ خود را بنویسید:",
     )
@@ -199,7 +206,7 @@ async def msg_admin_send_reply(message: Message, state: FSMContext) -> None:
         await message.bot.send_message(
             chat_id=user_id,
             text=(
-                f"🎧 <b>پاسخ پشتیبانی — تیکت #{ticket_id}</b>\n\n"
+                f"{get_pe('call')} <b>پاسخ پشتیبانی — تیکت #{ticket_id}</b>\n\n"
                 f"{reply_text}\n\n"
                 "اگر سؤال دیگری دارید، مجدداً تیکت ارسال کنید."
             ),
@@ -217,7 +224,7 @@ async def msg_admin_send_reply(message: Message, state: FSMContext) -> None:
 
     await state.clear()
     await message.answer(
-        f"✅ پاسخ تیکت #{ticket_id} با موفقیت ارسال شد و تیکت بسته شد."
+        f"{get_pe('check')} پاسخ تیکت #{ticket_id} با موفقیت ارسال شد و تیکت بسته شد."
     )
 
 
@@ -226,6 +233,7 @@ async def msg_admin_send_reply(message: Message, state: FSMContext) -> None:
 @router.callback_query(F.data.startswith("ticket:close:"))
 async def cb_admin_close_ticket(callback: CallbackQuery) -> None:
     """Admin closes a ticket without replying."""
+    await callback.answer()
     if callback.from_user.id not in config.ADMIN_IDS:
         await callback.answer("⛔ دسترسی غیرمجاز", show_alert=True)
         return
@@ -248,7 +256,7 @@ async def cb_admin_close_ticket(callback: CallbackQuery) -> None:
         await callback.bot.send_message(
             chat_id=ticket["user_id"],
             text=(
-                f"🎫 <b>تیکت #{ticket_id} بسته شد.</b>\n\n"
+                f"{get_pe('ticket')} <b>تیکت #{ticket_id} بسته شد.</b>\n\n"
                 "تیکت شما توسط مدیر بسته شد.\n"
                 "اگر سؤال دیگری دارید، مجدداً تیکت ارسال کنید."
             ),

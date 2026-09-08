@@ -14,6 +14,7 @@ from config import config
 from states.states import AIAccountStates
 from utils.pricing import price_display, price_display_raw
 from utils.zarinpal import request_payment
+from utils.emojis import get_pe
 from database.db import create_order, create_payment, update_payment_authority, get_price_or_default
 from keyboards.inline import (
     ai_platform_kb,
@@ -33,6 +34,7 @@ _PLATFORM_INFO = {
 
 @router.callback_query(F.data.startswith("ai:platform:"))
 async def cb_ai_platform(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
     platform = callback.data.split(":")[2]
     if platform not in _PLATFORM_INFO:
         await callback.answer("گزینه نامعتبر", show_alert=True)
@@ -75,9 +77,9 @@ async def cb_ai_platform(callback: CallbackQuery, state: FSMContext) -> None:
     rate_str = f"{rate:,.0f}".replace(",", "،")
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            f"🤖 <b>{label}</b>\n\n"
-            f"💰 قیمت: <b>{final_irt:,} تومان</b>\n"
-            f"💱 نرخ ارز: ۱ دلار = {rate_str} تومان\n\n"
+            f"{get_pe('bot')} <b>{label}</b>\n\n"
+            f"{get_pe('money')} قیمت: <b>{final_irt:,} تومان</b>\n"
+            f"{get_pe('exchange')} نرخ ارز: ۱ دلار = {rate_str} تومان\n\n"
             "پس از پرداخت، اطلاعات ورود اکانت شما به صورت خودکار ارسال می‌شود.",
             reply_markup=pay_link_kb(result.start_pay_url),
         )

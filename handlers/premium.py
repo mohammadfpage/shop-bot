@@ -14,6 +14,7 @@ from config import config
 from states.states import TelegramPremiumStates
 from utils.pricing import price_display, price_display_raw
 from utils.zarinpal import request_payment
+from utils.emojis import get_pe
 from database.db import create_order, update_order_amount, create_payment, update_payment_authority, get_price_or_default
 from keyboards.inline import (
     premium_duration_kb,
@@ -44,11 +45,12 @@ _DURATION_KEYS = {
 
 @router.callback_query(F.data.startswith("premium:back"))
 async def cb_premium_back(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
     await state.clear()
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            "⭐ <b>تلگرام پرمیوم</b>\nیک پلن اشتراک را انتخاب کنید:",
-            reply_markup=premium_duration_kb(),
+            f"{get_pe('star')} <b>تلگرام پرمیوم</b>\nیک پلن اشتراک را انتخاب کنید:",
+            reply_markup=await premium_duration_kb(),
         )
     await callback.answer()
 
@@ -57,6 +59,7 @@ async def cb_premium_back(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data.startswith("premium:") & ~F.data.startswith("premium:target:") & ~F.data.startswith("premium:back"))
 async def cb_choose_duration(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
     duration = callback.data.split(":")[1]
     if duration not in _DURATION_LABELS:
         await callback.answer("گزینه نامعتبر", show_alert=True)
@@ -72,8 +75,8 @@ async def cb_choose_duration(callback: CallbackQuery, state: FSMContext) -> None
 
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            f"⭐ <b>{label}</b>\n\n"
-            f"💰 قیمت: <b>{price_str}</b>\n\n"
+            f"{get_pe('star')} <b>{label}</b>\n\n"
+            f"{get_pe('money')} قیمت: <b>{price_str}</b>\n\n"
             "این اشتراک برای چه کسی است؟",
             reply_markup=premium_target_kb(),
         )
@@ -84,6 +87,7 @@ async def cb_choose_duration(callback: CallbackQuery, state: FSMContext) -> None
 
 @router.callback_query(F.data.startswith("premium:target:"), TelegramPremiumStates.choose_target)
 async def cb_choose_target(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
     target = callback.data.split(":")[2]
 
     if target == "self":
@@ -91,12 +95,12 @@ async def cb_choose_target(callback: CallbackQuery, state: FSMContext) -> None:
         await _initiate_payment(callback, state)
     else:
         await state.set_state(TelegramPremiumStates.enter_other_id)
-        with contextlib.suppress(TelegramBadRequest):
-            await callback.message.edit_text(
-                "👥 لطفاً <b>شناسه کاربری تلگرام</b> دریافت‌کننده را ارسال کنید.\n"
-                "(فقط شناسه عددی — مثال: <code>123456789</code>)",
-                reply_markup=back_to_menu_kb(),
-            )
+    with contextlib.suppress(TelegramBadRequest):
+        await callback.message.edit_text(
+            f"{get_pe('users')} لطفاً <b>شناسه کاربری تلگرام</b> دریافت‌کننده را ارسال کنید.\n"
+            "(فقط شناسه عددی — مثال: <code>123456789</code>)",
+            reply_markup=back_to_menu_kb(),
+        )
     await callback.answer()
 
 
@@ -158,11 +162,11 @@ async def _initiate_payment(callback: CallbackQuery, state: FSMContext) -> None:
     rate_str = f"{rate:,.0f}".replace(",", "،")
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            f"💳 <b>پرداخت: {product}</b>\n\n"
-            f"👤 دریافت‌کننده: {target_label}\n"
-            f"💱 نرخ ارز: ۱ دلار = {rate_str} تومان\n"
-            f"💰 مبلغ کل: <b>{final_irt:,} تومان</b>\n\n"
-            f"برای ادامه پرداخت روی دکمه زیر کلیک کنید:",
+            f"{get_pe('card')} <b>پرداخت: {product}</b>\n\n"
+            f"{get_pe('user')} دریافت‌کننده: {target_label}\n"
+            f"{get_pe('exchange')} نرخ ارز: ۱ دلار = {rate_str} تومان\n"
+            f"{get_pe('money')} مبلغ کل: <b>{final_irt:,} تومان</b>\n\n"
+            "برای ادامه پرداخت روی دکمه زیر کلیک کنید:",
             reply_markup=pay_link_kb(result.start_pay_url),
         )
 
@@ -207,10 +211,10 @@ async def _initiate_payment_msg(message: Message, state: FSMContext) -> None:
 
     rate_str = f"{rate:,.0f}".replace(",", "،")
     await message.answer(
-        f"💳 <b>پرداخت: {product}</b>\n\n"
-        f"👤 دریافت‌کننده: {target_label}\n"
-        f"💱 نرخ ارز: ۱ دلار = {rate_str} تومان\n"
-        f"💰 مبلغ کل: <b>{final_irt:,} تومان</b>\n\n"
-        f"برای ادامه پرداخت روی دکمه زیر کلیک کنید:",
+        f"{get_pe('card')} <b>پرداخت: {product}</b>\n\n"
+        f"{get_pe('user')} دریافت‌کننده: {target_label}\n"
+        f"{get_pe('exchange')} نرخ ارز: ۱ دلار = {rate_str} تومان\n"
+        f"{get_pe('money')} مبلغ کل: <b>{final_irt:,} تومان</b>\n\n"
+        "برای ادامه پرداخت روی دکمه زیر کلیک کنید:",
         reply_markup=pay_link_kb(result.start_pay_url),
     )

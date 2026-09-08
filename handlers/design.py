@@ -14,6 +14,7 @@ from config import config
 from states.states import DesignServiceStates
 from utils.pricing import price_display, price_display_raw
 from utils.zarinpal import request_payment
+from utils.emojis import get_pe
 from database.db import create_order, create_payment, update_payment_authority, get_price_or_default
 from keyboards.inline import (
     design_category_kb,
@@ -52,10 +53,11 @@ _TIER_DESCRIPTIONS = {
 
 @router.callback_query(F.data == "menu:design")
 async def cb_menu_design(callback: CallbackQuery) -> None:
+    await callback.answer()
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            "🎨 <b>خدمات طراحی</b>\nیک دسته را انتخاب کنید:",
-            reply_markup=design_category_kb(),
+            f"{get_pe('fire')} <b>خدمات طراحی</b>\nیک دسته را انتخاب کنید:",
+            reply_markup=await design_category_kb(),
         )
     await callback.answer()
 
@@ -64,6 +66,7 @@ async def cb_menu_design(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("design:cat:"))
 async def cb_design_category(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
     category = callback.data.split(":")[2]
     if category not in _CATEGORY_NAMES:
         await callback.answer("دسته نامعتبر", show_alert=True)
@@ -75,25 +78,27 @@ async def cb_design_category(callback: CallbackQuery, state: FSMContext) -> None
 
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            f"🎨 <b>خدمات طراحی — {cat_name}</b>\nیک سطح کیفیت را انتخاب کنید:",
-            reply_markup=design_tier_kb(category),
+            f"{get_pe('fire')} <b>خدمات طراحی — {cat_name}</b>\nیک سطح کیفیت را انتخاب کنید:",
+            reply_markup=await design_tier_kb(category),
         )
     await callback.answer()
 
 
 @router.callback_query(F.data == "design:back_to_categories")
 async def cb_design_back_to_categories(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
     await state.clear()
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            "🎨 <b>خدمات طراحی</b>\nیک دسته را انتخاب کنید:",
-            reply_markup=design_category_kb(),
+            f"{get_pe('fire')} <b>خدمات طراحی</b>\nیک دسته را انتخاب کنید:",
+            reply_markup=await design_category_kb(),
         )
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("design:tier:"), DesignServiceStates.choose_tier)
 async def cb_design_tier(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
     parts = callback.data.split(":")
     # design:tier:{category}:{tier}
     category = parts[2]
@@ -123,10 +128,10 @@ async def cb_design_tier(callback: CallbackQuery, state: FSMContext) -> None:
 
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            f"🎨 <b>{label}</b>\n\n"
+            f"{get_pe('fire')} <b>{label}</b>\n\n"
             f"{desc}\n\n"
-            f"💰 قیمت: <b>{price_str}</b>\n\n"
-            "📝 لطفاً پروژه خود را با جزئیات توضیح دهید.\n"
+            f"{get_pe('money')} قیمت: <b>{price_str}</b>\n\n"
+            f"{get_pe('star')} لطفاً پروژه خود را با جزئیات توضیح دهید.\n"
             "توضیحات را به صورت پیام بعدی ارسال کنید.",
             reply_markup=back_to_menu_kb(),
         )
@@ -146,7 +151,7 @@ async def msg_design_description(message: Message, state: FSMContext) -> None:
     await state.set_state(DesignServiceStates.enter_contact)
 
     await message.answer(
-        "📞 چگونه مدیر می‌تواند با شما ارتباط بگیرد?\n"
+        f"{get_pe('call')} چگونه مدیر می‌تواند با شما ارتباط بگیرد?\n"
         "نام کاربری <b>تلگرام</b> یا <b>شماره تماس</b> خود را ارسال کنید.",
         reply_markup=back_to_menu_kb(),
     )
@@ -197,11 +202,11 @@ async def msg_design_contact(message: Message, state: FSMContext) -> None:
 
     rate_str = f"{rate:,.0f}".replace(",", "،")
     await message.answer(
-        f"🎨 <b>خدمات طراحی — {label}</b>\n\n"
-        f"📝 توضیحات: {description[:200]}{'…' if len(description) > 200 else ''}\n"
-        f"📞 تماس: {contact}\n\n"
-        f"💱 نرخ ارز: ۱ دلار = {rate_str} تومان\n"
-        f"💰 مبلغ کل: <b>{final_irt:,} تومان</b>\n\n"
+        f"{get_pe('fire')} <b>خدمات طراحی — {label}</b>\n\n"
+        f"{get_pe('star')} توضیحات: {description[:200]}{'…' if len(description) > 200 else ''}\n"
+        f"{get_pe('call')} تماس: {contact}\n\n"
+        f"{get_pe('exchange')} نرخ ارز: ۱ دلار = {rate_str} تومان\n"
+        f"{get_pe('money')} مبلغ کل: <b>{final_irt:,} تومان</b>\n\n"
         "برای پرداخت روی دکمه زیر کلیک کنید. پس از پرداخت درخواست شما به تیم طراحی ارسال می‌شود.",
         reply_markup=pay_link_kb(result.start_pay_url),
     )

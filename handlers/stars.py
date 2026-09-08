@@ -20,6 +20,7 @@ from config import config
 from states.states import TelegramStarsStates, TelegramStarsGiftStates
 from utils.pricing import price_display, price_display_raw
 from utils.zarinpal import request_payment
+from utils.emojis import get_pe
 from database.db import create_order, create_payment, update_payment_authority, get_price_or_default
 from keyboards.inline import (
     stars_target_kb,
@@ -43,10 +44,11 @@ MIN_STARS = 50
 @router.callback_query(F.data == "menu:stars")
 async def cb_enter_stars_state(callback: CallbackQuery, state: FSMContext) -> None:
     """Set state so the next text message is captured for star quantity."""
+    await callback.answer()
     await state.set_state(TelegramStarsStates.enter_quantity)
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            "🌟 <b>خرید استارز تلگرام</b>\n\n"
+            f"{get_pe('star_gift')} <b>خرید استارز تلگرام</b>\n\n"
             "چه تعداد استارز می‌خواهید؟\n"
             "<i>حداقل: ۵۰ استارز</i>\n\n"
             "تعداد را به صورت پیام ارسال کنید (مثال: <code>100</code>).",
@@ -59,10 +61,11 @@ async def cb_enter_stars_state(callback: CallbackQuery, state: FSMContext) -> No
 
 @router.callback_query(F.data == "stars:back")
 async def cb_stars_back(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
     await state.clear()
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            "🌟 <b>خرید استارز تلگرام</b>\n\n"
+            f"{get_pe('star_gift')} <b>خرید استارز تلگرام</b>\n\n"
             "چه تعداد استارز می‌خواهید؟\n"
             "<i>حداقل: ۵۰ استارز</i>\n\n"
             "تعداد را به صورت پیام ارسال کنید.",
@@ -92,8 +95,8 @@ async def msg_stars_quantity(message: Message, state: FSMContext) -> None:
     await state.set_state(TelegramStarsStates.choose_target)
 
     await message.answer(
-        f"🌟 <b>{qty} استارز تلگرام</b>\n\n"
-        f"💰 قیمت: <b>{price_str}</b>\n\n"
+        f"{get_pe('star_gift')} <b>{qty} استارز تلگرام</b>\n\n"
+        f"{get_pe('money')} قیمت: <b>{price_str}</b>\n\n"
         "این استارزها برای چه کسی است؟",
         reply_markup=stars_target_kb(),
     )
@@ -103,6 +106,7 @@ async def msg_stars_quantity(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data.startswith("stars:target:"), TelegramStarsStates.choose_target)
 async def cb_stars_target(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
     target = callback.data.split(":")[2]
 
     if target == "self":
@@ -110,12 +114,12 @@ async def cb_stars_target(callback: CallbackQuery, state: FSMContext) -> None:
         await _stars_payment(callback, state)
     else:
         await state.set_state(TelegramStarsStates.enter_other_id)
-        with contextlib.suppress(TelegramBadRequest):
-            await callback.message.edit_text(
-                "👥 لطفاً <b>شناسه کاربری تلگرام</b> دریافت‌کننده را ارسال کنید.\n"
-                "(فقط شناسه عددی — مثال: <code>123456789</code>)",
-                reply_markup=back_to_menu_kb(),
-            )
+    with contextlib.suppress(TelegramBadRequest):
+        await callback.message.edit_text(
+            f"{get_pe('users')} لطفاً <b>شناسه کاربری تلگرام</b> دریافت‌کننده را ارسال کنید.\n"
+            "(فقط شناسه عددی — مثال: <code>123456789</code>)",
+            reply_markup=back_to_menu_kb(),
+        )
     await callback.answer()
 
 
@@ -170,10 +174,10 @@ async def _stars_payment(callback: CallbackQuery, state: FSMContext) -> None:
     rate_str = f"{rate:,.0f}".replace(",", "،")
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            f"💳 <b>پرداخت: {qty} استارز تلگرام</b>\n\n"
-            f"👤 دریافت‌کننده: {target_label}\n"
-            f"💱 نرخ ارز: ۱ دلار = {rate_str} تومان\n"
-            f"💰 مبلغ کل: <b>{final_irt:,} تومان</b>\n\n"
+            f"{get_pe('card')} <b>پرداخت: {qty} استارز تلگرام</b>\n\n"
+            f"{get_pe('user')} دریافت‌کننده: {target_label}\n"
+            f"{get_pe('exchange')} نرخ ارز: ۱ دلار = {rate_str} تومان\n"
+            f"{get_pe('money')} مبلغ کل: <b>{final_irt:,} تومان</b>\n\n"
             "برای پرداخت روی دکمه زیر کلیک کنید:",
             reply_markup=pay_link_kb(result.start_pay_url),
         )
@@ -216,10 +220,10 @@ async def _stars_payment_msg(message: Message, state: FSMContext) -> None:
 
     rate_str = f"{rate:,.0f}".replace(",", "،")
     await message.answer(
-        f"💳 <b>پرداخت: {qty} استارز تلگرام</b>\n\n"
-        f"👤 دریافت‌کننده: {target_label}\n"
-        f"💱 نرخ ارز: ۱ دلار = {rate_str} تومان\n"
-        f"💰 مبلغ کل: <b>{final_irt:,} تومان</b>\n\n"
+        f"{get_pe('card')} <b>پرداخت: {qty} استارز تلگرام</b>\n\n"
+        f"{get_pe('user')} دریافت‌کننده: {target_label}\n"
+        f"{get_pe('exchange')} نرخ ارز: ۱ دلار = {rate_str} تومان\n"
+        f"{get_pe('money')} مبلغ کل: <b>{final_irt:,} تومان</b>\n\n"
         "برای پرداخت روی دکمه زیر کلیک کنید:",
         reply_markup=pay_link_kb(result.start_pay_url),
     )
@@ -263,11 +267,12 @@ _GIFT_EMOJI_MAP: dict[str, str] = {
 @router.callback_query(F.data == "menu:stars_gift")
 async def cb_enter_stars_gift(callback: CallbackQuery, state: FSMContext) -> None:
     """Show the individual stars gifts grid."""
+    await callback.answer()
     await state.set_state(TelegramStarsGiftStates.choose_package)
     kb = await stars_gift_items_kb()
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            "🎁 <b>گیفت‌های استارز تلگرام</b>\n\n"
+            f"{get_pe('gift')} <b>گیفت‌های استارز تلگرام</b>\n\n"
             "یک گیفت را انتخاب کنید:\n"
             "<i>لینک هدیه پس از پرداخت برای شما ارسال می‌شود.</i>",
             reply_markup=kb,
@@ -278,6 +283,7 @@ async def cb_enter_stars_gift(callback: CallbackQuery, state: FSMContext) -> Non
 @router.callback_query(F.data.startswith("stars_gift:item:"), TelegramStarsGiftStates.choose_package)
 async def cb_stars_gift_item(callback: CallbackQuery, state: FSMContext) -> None:
     """Handle individual gift item selection and initiate payment."""
+    await callback.answer()
     product_key = callback.data.split(":", 2)[2]
 
     stars_count = _GIFT_STARS_MAP.get(product_key)
@@ -325,9 +331,9 @@ async def cb_stars_gift_item(callback: CallbackQuery, state: FSMContext) -> None
     rate_str = f"{rate:,.0f}".replace(",", "،")
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            f"💳 <b>پرداخت: گیفت {emoji} {stars_count} استارز</b>\n\n"
-            f"💱 نرخ ارز: ۱ دلار = {rate_str} تومان\n"
-            f"💰 مبلغ کل: <b>{final_irt:,} تومان</b>\n\n"
+            f"{get_pe('card')} <b>پرداخت: گیفت {emoji} {stars_count} استارز</b>\n\n"
+            f"{get_pe('exchange')} نرخ ارز: ۱ دلار = {rate_str} تومان\n"
+            f"{get_pe('money')} مبلغ کل: <b>{final_irt:,} تومان</b>\n\n"
             "برای پرداخت روی دکمه زیر کلیک کنید:",
             reply_markup=pay_link_kb(result.start_pay_url),
         )
@@ -338,11 +344,12 @@ async def cb_stars_gift_item(callback: CallbackQuery, state: FSMContext) -> None
 @router.callback_query(F.data == "stars_gift:back")
 async def cb_stars_gift_back(callback: CallbackQuery, state: FSMContext) -> None:
     """Return to gift item selection."""
+    await callback.answer()
     await state.set_state(TelegramStarsGiftStates.choose_package)
     kb = await stars_gift_items_kb()
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            "🎁 <b>گیفت‌های استارز تلگرام</b>\n\n"
+            f"{get_pe('gift')} <b>گیفت‌های استارز تلگرام</b>\n\n"
             "یک گیفت را انتخاب کنید:\n"
             "<i>لینک هدیه پس از پرداخت برای شما ارسال می‌شود.</i>",
             reply_markup=kb,

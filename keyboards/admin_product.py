@@ -11,6 +11,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from keyboards.callback_data import ProductCallback
+from utils.emojis import get_premium_id
 
 
 def product_list_kb(products: list[dict]) -> InlineKeyboardMarkup:
@@ -26,13 +27,15 @@ def product_list_kb(products: list[dict]) -> InlineKeyboardMarkup:
 
     for p in products:
         price_str = f"${p['usd_price']:.2f}"
-        text = f"🏷 {p['label']} — {price_str}"
+        text = f"{p['label']} — {price_str}"
         builder.button(
             text=text,
             callback_data=ProductCallback(
                 action="select",
                 product_key=p["product_key"],
             ).pack(),
+            style="primary",
+            icon_custom_emoji_id=get_premium_id("box"),
         )
 
     # One button per row for readability
@@ -41,8 +44,10 @@ def product_list_kb(products: list[dict]) -> InlineKeyboardMarkup:
     # Add "🔙 بازگشت به پنل" at the bottom
     builder.row(
         InlineKeyboardButton(
-            text="🔙 بازگشت به پنل",
+            text="بازگشت به پنل",
             callback_data="admin:panel",
+            style="primary",
+            icon_custom_emoji_id=get_premium_id("home"),
         )
     )
 
@@ -61,17 +66,21 @@ def product_detail_kb(product_key: str, label: str, usd_price: float) -> InlineK
     builder = InlineKeyboardBuilder()
 
     builder.button(
-        text="✏️ ویرایش قیمت",
+        text="ویرایش قیمت",
         callback_data=ProductCallback(
             action="edit",
             product_key=product_key,
         ).pack(),
+        style="primary",
+        icon_custom_emoji_id=get_premium_id("gear"),
     )
 
     builder.row(
         InlineKeyboardButton(
-            text="🔙 بازگشت به لیست",
+            text="بازگشت به لیست",
             callback_data="admin:prices",
+            style="primary",
+            icon_custom_emoji_id=get_premium_id("down"),
         )
     )
 
@@ -87,11 +96,15 @@ def product_edit_success_kb() -> InlineKeyboardMarkup:
     """
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
-            text="🔙 بازگشت به لیست",
+            text="بازگشت به لیست",
             callback_data="admin:prices",
+            style="primary",
+            icon_custom_emoji_id=get_premium_id("down"),
         )],
         [InlineKeyboardButton(
-            text="🔙 بازگشت به پنل",
+            text="بازگشت به پنل",
             callback_data="admin:panel",
+            style="primary",
+            icon_custom_emoji_id=get_premium_id("home"),
         )],
     ])

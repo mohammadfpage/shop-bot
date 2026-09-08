@@ -17,6 +17,7 @@ from database.db import (
 from keyboards.inline import back_to_menu_kb
 from utils.delivery import deliver_product
 from utils.zarinpal import verify_payment
+from utils.emojis import get_pe
 
 router = Router(name="payment")
 
@@ -24,6 +25,7 @@ router = Router(name="payment")
 @router.callback_query(F.data == "pay:check")
 async def cb_pay_check(callback: CallbackQuery, state: FSMContext) -> None:
     """Verify one persisted payment and deliver only after exact validation."""
+    await callback.answer()
     try:
         state_data = await state.get_data()
         payment_id = state_data.get("payment_id")
@@ -67,13 +69,13 @@ async def cb_pay_check(callback: CallbackQuery, state: FSMContext) -> None:
             and amount_matches
         ):
             await fail_payment(payment_id)
-            with contextlib.suppress(TelegramBadRequest):
-                await callback.message.edit_text(
-                    "❌ <b>بررسی پرداخت ناموفق بود.</b>\n\n"
-                    f"دلیل: {result.message or 'مبلغ پرداخت با سفارش مطابقت ندارد.'}\n\n"
-                    "اگر فکر می‌کنید این خطا است، لطفاً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید.",
-                    reply_markup=back_to_menu_kb(),
-                )
+        with contextlib.suppress(TelegramBadRequest):
+            await callback.message.edit_text(
+                f"{get_pe('cross')} <b>بررسی پرداخت ناموفق بود.</b>\n\n"
+                f"دلیل: {result.message or 'مبلغ پرداخت با سفارش مطابقت ندارد.'}\n\n"
+                "اگر فکر می‌کنید این خطا است، لطفاً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید.",
+                reply_markup=back_to_menu_kb(),
+            )
             return
 
         # This conditional transition prevents duplicate fulfillment.
@@ -102,6 +104,7 @@ async def cb_pay_check(callback: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(F.data == "pay:cancel")
 async def cb_pay_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     """Cancel the current payment and remove its persisted payment record."""
+    await callback.answer()
     try:
         data = await state.get_data()
         payment_id = data.get("payment_id")
@@ -114,7 +117,7 @@ async def cb_pay_cancel(callback: CallbackQuery, state: FSMContext) -> None:
 
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(
-                "❌ پرداخت لغو شد.\n\nبه منوی اصلی بازگردید:",
+                f"{get_pe('cross')} پرداخت لغو شد.\n\nبه منوی اصلی بازگردید:",
                 reply_markup=back_to_menu_kb(),
             )
         await callback.answer()

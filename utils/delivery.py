@@ -19,6 +19,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import config
 from database.db import get_order
 from keyboards.inline import back_to_menu_kb
+from utils.emojis import get_pe
 
 logger = logging.getLogger(__name__)
 
@@ -64,8 +65,8 @@ async def _deliver_ai_account(bot: Bot, user_id: int, order_id: int, product: st
         await _safe_send(
             bot,
             user_id,
-            f"🎉 <b>پرداخت موفق!</b>\n\n"
-            f"🤖 <b>اطلاعات ورود {product}:</b>\n\n"
+            f"{get_pe('sparkles')} <b>پرداخت موفق!</b>\n\n"
+            f"{get_pe('bot')} <b>اطلاعات ورود {product}:</b>\n\n"
             f"📧 ایمیل: <code>{acc['email']}</code>\n"
             f"🔑 رمز عبور: <code>{acc['password']}</code>\n\n"
             "⚠️ لطفاً پس از ورود رمز عبور را تغییر دهید.\n"
@@ -75,7 +76,7 @@ async def _deliver_ai_account(bot: Bot, user_id: int, order_id: int, product: st
         await _safe_send(
             bot,
             user_id,
-            f"✅ پرداخت موفق!\n\n"
+            f"{get_pe('check')} پرداخت موفق!\n\n"
             f"⚠️ در حال حاضر اطلاعات ورود موجود نیست. "
             f"مدیر ما {product} شما را به زودی تحویل خواهد داد.",
         )
@@ -87,8 +88,8 @@ async def _deliver_design(
     await _safe_send(
         bot,
         user_id,
-        "🎉 <b>پرداخت موفق!</b>\n\n"
-        "🎨 درخواست طراحی شما ثبت شد!\n"
+        f"{get_pe('sparkles')} <b>پرداخت موفق!</b>\n\n"
+        f"{get_pe('fire')} درخواست طراحی شما ثبت شد!\n"
         "تیم طراحی ما درخواست شما را بررسی کرده و به زودی با شما تماس خواهد گرفت.",
     )
 
@@ -96,10 +97,10 @@ async def _deliver_design(
     order = await get_order(order_id)
     if order:
         admin_msg = (
-            f"🎨 <b>سفارش طراحی جدید #{order['order_id']}</b>\n\n"
-            f"👤 کاربر: <code>{order['user_id']}</code>\n"
+            f"{get_pe('fire')} <b>سفارش طراحی جدید #{order['order_id']}</b>\n\n"
+            f"{get_pe('user')} کاربر: <code>{order['user_id']}</code>\n"
             f"📝 جزئیات:\n{order['details']}\n\n"
-            f"💰 مبلغ: {order['amount_irt']:,} تومان\n"
+            f"{get_pe('money')} مبلغ: {order['amount_irt']:,} تومان\n"
             "لطفاً این سفارش را پردازش کنید."
         )
         await _notify_admins(bot, admin_msg)
@@ -109,7 +110,7 @@ async def _deliver_generic(bot: Bot, user_id: int, order_id: int, product: str) 
     await _safe_send(
         bot,
         user_id,
-        f"🎉 <b>پرداخت موفق!</b>\n\n"
+        f"{get_pe('sparkles')} <b>پرداخت موفق!</b>\n\n"
         f"سفارش <b>{product}</b> شما تأیید شد.\n\n"
         "فعال‌سازی اشتراک‌های پرمیوم به زودی انجام خواهد شد.\n"
         "برای پشتیبانی با @admin تماس بگیرید.",
@@ -118,7 +119,7 @@ async def _deliver_generic(bot: Bot, user_id: int, order_id: int, product: str) 
     order = await get_order(order_id)
     if order:
         admin_msg = (
-            f"💰 <b>سفارش پرداخت شده #{order['order_id']}</b>\n\n"
+            f"{get_pe('money')} <b>سفارش پرداخت شده #{order['order_id']}</b>\n\n"
             f"محصول: {order['product']}\n"
             f"جزئیات: {order['details']}\n"
             f"مبلغ: {order['amount_irt']:,} تومان\n"

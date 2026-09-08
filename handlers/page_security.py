@@ -13,6 +13,7 @@ from aiogram.exceptions import TelegramBadRequest
 from config import config
 from states.states import PageSecurityStates
 from utils.pricing import price_display
+from utils.emojis import get_pe
 from database.db import create_order, get_or_create_user
 from keyboards.inline import (
     security_tariff_kb,
@@ -26,6 +27,7 @@ router = Router(name="page_security")
 
 @router.callback_query(F.data.startswith("security:tariff:"))
 async def cb_security_tariff(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
     tariff_key = callback.data.split(":")[2]
     tariffs = config.SECURITY_TARIFFS
 
@@ -46,10 +48,10 @@ async def cb_security_tariff(callback: CallbackQuery, state: FSMContext) -> None
 
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            f"🛡 <b>امنیت صفحه — {tariff_name}</b>\n\n"
+            f"{get_pe('shield')} <b>امنیت صفحه — {tariff_name}</b>\n\n"
             f"{desc}\n\n"
-            f"💰 قیمت: <b>{price_str}</b>\n\n"
-            "🔗 لطفاً <b>آدرس URL صفحه‌ای</b> که می‌خواهید امن شود را ارسال کنید.",
+            f"{get_pe('money')} قیمت: <b>{price_str}</b>\n\n"
+            f"{get_pe('web')} لطفاً <b>آدرس URL صفحه‌ای</b> که می‌خواهید امن شود را ارسال کنید.",
             reply_markup=back_to_menu_kb(),
         )
     await callback.answer()
@@ -68,7 +70,7 @@ async def msg_page_url(message: Message, state: FSMContext) -> None:
     await state.set_state(PageSecurityStates.enter_details)
 
     await message.answer(
-        "📝 لطفاً <b>نگرانی‌ها یا الزامات امنیتی خاص</b> را توضیح دهید.\n"
+        f"{get_pe('star')} لطفاً <b>نگرانی‌ها یا الزامات امنیتی خاص</b> را توضیح دهید.\n"
         "اگر موردی نیست، فقط <code>none</code> ارسال کنید.",
         reply_markup=back_to_menu_kb(),
     )
@@ -92,17 +94,24 @@ async def msg_security_details(message: Message, state: FSMContext) -> None:
     tariff_name = tariff_names.get(tariff_key, tariff_key)
 
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    from utils.emojis import get_premium_id
     confirm_kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ تأیید و ارسال", callback_data="security:confirm")],
-        [InlineKeyboardButton(text="❌ انصراف", callback_data="menu:back")],
+        [InlineKeyboardButton(text="تأیید و ارسال",
+                              callback_data="security:confirm",
+                              style="success",
+                              icon_custom_emoji_id=get_premium_id("check"))],
+        [InlineKeyboardButton(text="انصراف",
+                              callback_data="menu:back",
+                              style="danger",
+                              icon_custom_emoji_id=get_premium_id("cross"))],
     ])
 
     await message.answer(
-        f"🛡 <b>خلاصه درخواست امنیتی</b>\n\n"
+        f"{get_pe('shield')} <b>خلاصه درخواست امنیتی</b>\n\n"
         f"تعرفه: <b>{tariff_name}</b>\n"
         f"صفحه: <code>{page_url}</code>\n"
         f"جزئیات: {details if details.lower() != 'none' else '—'}\n"
-        f"💰 قیمت تخمینی: <b>{price_str}</b>\n\n"
+        f"{get_pe('money')} قیمت تخمینی: <b>{price_str}</b>\n\n"
         "روی <b>تأیید و ارسال</b> کلیک کنید تا درخواست شما به تیم ما ارسال شود.\n"
         "مدیر ما به زودی با شما تماس خواهد گرفت.",
         reply_markup=confirm_kb,
@@ -113,6 +122,7 @@ async def msg_security_details(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "security:confirm", PageSecurityStates.confirm)
 async def cb_security_confirm(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
     data = await state.get_data()
 
     user = await get_or_create_user(
@@ -141,14 +151,14 @@ async def cb_security_confirm(callback: CallbackQuery, state: FSMContext) -> Non
 
     # Forward to all admins
     admin_msg = (
-        f"🛡 <b>درخواست امنیتی جدید</b>\n\n"
-        f"👤 کاربر: {callback.from_user.full_name} (@{callback.from_user.username or 'N/A'})\n"
+        f"{get_pe('shield')} <b>درخواست امنیتی جدید</b>\n\n"
+        f"{get_pe('user')} کاربر: {callback.from_user.full_name} (@{callback.from_user.username or 'N/A'})\n"
         f"🆔 شناسه: <code>{callback.from_user.id}</code>\n\n"
         f"تعرفه: <b>{tariff_name}</b>\n"
         f"توضیحات: {tariff_desc}\n"
         f"صفحه: <code>{page_url}</code>\n"
         f"جزئیات: {details if details.lower() != 'none' else '—'}\n"
-        f"💰 قیمت: {price_str}\n\n"
+        f"{get_pe('money')} قیمت: {price_str}\n\n"
         f"<i>برای تکمیل سفارش با کاربر تماس بگیرید.</i>"
     )
 
@@ -160,7 +170,7 @@ async def cb_security_confirm(callback: CallbackQuery, state: FSMContext) -> Non
 
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            "✅ <b>درخواست شما با موفقیت ثبت شد!</b>\n\n"
+            f"{get_pe('check')} <b>درخواست شما با موفقیت ثبت شد!</b>\n\n"
             "مدیر ما به زودی با شما تماس خواهد گرفت تا جزئیات را بررسی کرده و پرداخت را نهایی کند.",
             reply_markup=back_to_menu_kb(),
         )

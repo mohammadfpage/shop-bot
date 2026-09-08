@@ -17,6 +17,7 @@ from aiogram.exceptions import TelegramBadRequest
 
 from keyboards.reply import main_reply_kb
 from keyboards.inline import market_rates_refresh_kb
+from utils.emojis import get_pe
 
 router = Router(name="rate")
 
@@ -79,7 +80,7 @@ async def reply_btn_rate(message: Message) -> None:
     cryptocurrency = build_lookup("cryptocurrency")
 
     # ── Compose the message ────────────────────────────────────────
-    lines = ["📊 <b>قیمت لحظه‌ای ارزها و طلا</b>\n"]
+    lines = [f"{get_pe('chart')} <b>قیمت لحظه‌ای ارزها و طلا</b>\n"]
 
     # Popular currencies
     lines.append("🔸 <b>ارزهای پرکاربرد:</b>")

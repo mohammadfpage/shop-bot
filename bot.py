@@ -80,8 +80,18 @@ async def global_error_handler(event: ErrorEvent) -> None:
         user_id = update.callback_query.from_user.id
 
     if user_id is not None:
+        # Use the module-level bot (initialized in lifespan) which is the most
+        # reliable reference. `event.bot` can be None when the error is raised
+        # before a bot is bound to the update (e.g. in middleware), which
+        # previously caused `'NoneType' object has no attribute 'send_message'`.
+        bot_instance: Bot | None = event.bot or bot
+        if bot_instance is None:
+            logger.error(
+                "Could not notify user %s about an error: no bot instance available.",
+                user_id,
+            )
+            return
         try:
-            bot_instance: Bot = event.bot
             await bot_instance.send_message(
                 chat_id=user_id,
                 text=(
@@ -157,6 +167,10 @@ async def lifespan(app: FastAPI):
     )
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
+
+    # Give the rate-cache background task a bot reference so it can alert
+    # admins when the BrsApi rate fetch fails.
+    rate_cache.set_bot(bot)
 
     dp.errors.register(global_error_handler)
     register_routers(dp)

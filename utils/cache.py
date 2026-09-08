@@ -80,6 +80,13 @@ class RateCache:
         self.entry: CacheEntry = CacheEntry()
         self._task: Optional[asyncio.Task] = None
         self.fetch_count: int = 0
+        self._bot: Any = None
+        self._last_alert_ts: float = 0.0
+        self._ALERT_COOLDOWN: float = 600.0  # max one admin alert per 10 min
+
+    def set_bot(self, bot: Any) -> None:
+        """Attach the Telegram Bot instance so failures can alert the admin."""
+        self._bot = bot
 
     # ── Public API ────────────────────────────────────────────────────
 
@@ -124,6 +131,41 @@ class RateCache:
 
     # ── Internal ──────────────────────────────────────────────────────
 
+    async def _alert_admin(self, reason: str) -> None:
+        """Send a notification to all admin IDs that the rate fetch failed.
+
+        Throttled so a persistent outage doesn't spam the admins (one alert
+        per _ALERT_COOLDOWN seconds).
+        """
+        now = time.time()
+        if now - self._last_alert_ts < self._ALERT_COOLDOWN:
+            return
+        self._last_alert_ts = now
+
+        bot_instance = self._bot
+        if bot_instance is None:
+            logger.warning(
+                "RateCache failure alert skipped: no bot instance attached."
+            )
+            return
+
+        text = (
+            "⚠️ <b>هشدار سیستم نرخ ارز</b>\n\n"
+            "دریافت نرخ ارز از سرویس BrsApi با خطا مواجه شد:\n"
+            f"<code>{reason}</code>\n\n"
+            "ربات از آخرین نرخ ذخیره‌شده استفاده می‌کند و هر ۵ دقیقه "
+            "مجدداً تلاش می‌کند."
+        )
+        for admin_id in config.ADMIN_IDS:
+            try:
+                await bot_instance.send_message(chat_id=admin_id, text=text)
+            except Exception as exc:
+                logger.error(
+                    "Failed to send rate-failure alert to admin %s: %s",
+                    admin_id,
+                    exc,
+                )
+
     async def _fetch(self) -> None:
         """Fetch the BrsApi and update the cache.
 
@@ -161,12 +203,27 @@ class RateCache:
                             "BrsApi returned HTTP %s — keeping stale cache",
                             resp.status,
                         )
+        except asyncio.TimeoutError as exc:
+            # Network timeout — very common on unstable local connections.
+            # Keep the stale cache and let the background loop continue.
+            logger.warning(
+                "RateCache request timed out (keeping stale cache): %s", exc
+            )
+            await self._alert_admin(f"TimeoutError: {exc}")
         except aiohttp.ClientError as exc:
             # Network / DNS / timeout — very common on free-tier Render
             logger.warning("RateCache network error (keeping stale cache): %s", exc)
+            await self._alert_admin(f"aiohttp.ClientError: {exc}")
+        except asyncio.CancelledError:
+            # A genuine cancellation (e.g. the background task being stopped at
+            # shutdown) must NOT be swallowed — re-raise so the loop terminates
+            # cleanly. Transient network failures surface as TimeoutError or
+            # aiohttp.ClientError above and are safely continued.
+            raise
         except Exception as exc:
             # Unexpected errors — log but never crash the loop
             logger.error("RateCache unexpected error: %s", exc, exc_info=True)
+            await self._alert_admin(f"{type(exc).__name__}: {exc}")
 
 
 # ── Singleton (importable by every module) ─────────────────────────

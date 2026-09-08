@@ -59,18 +59,35 @@ async def _fetch_brs_api() -> Optional[dict]:
 async def get_usd_rate() -> float:
     """Return the live USD → Tomans exchange rate from BrsApi.
 
-    Falls back to 570,000 Tomans if the API is unreachable.
+    Falls back to the last known saved rate from the shared RateCache
+    (the in-memory cache) instead of a hardcoded value. If no rate is
+    cached yet, returns a conservative default of 570,000 Tomans.
     """
+
+    def _extract_usd(data: Optional[dict]) -> Optional[float]:
+        if data and "currency" in data:
+            for item in data["currency"]:
+                if item.get("symbol") == "USD":
+                    rate = item.get("price", 0)
+                    if rate and float(rate) > 0:
+                        return float(rate)
+        return None
+
     data = await _fetch_brs_api()
-    if data and "currency" in data:
-        for item in data["currency"]:
-            if item.get("symbol") == "USD":
-                rate = item.get("price", 0)
-                if rate > 0:
-                    logger.info("Live USD/Toman rate: %s", rate)
-                    return float(rate)
-    # Fallback
-    logger.warning("Using fallback USD rate: 570000")
+    live = _extract_usd(data)
+    if live is not None:
+        logger.info("Live USD/Toman rate: %s", live)
+        return live
+
+    # No live rate → use the last known saved rate from the shared cache
+    from utils.cache import rate_cache
+    cached = _extract_usd(rate_cache.get_data())
+    if cached is not None:
+        logger.warning("Using last known cached USD rate: %s", cached)
+        return cached
+
+    # Nothing anywhere yet → conservative fallback (only right after boot)
+    logger.warning("No cached rate available; using fallback USD rate: 570000")
     return 570000.0
 
 

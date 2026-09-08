@@ -7,8 +7,8 @@ Commands:
     /users  — list registered users (IsAdmin protected)
 
 Reply keyboard:
-    "⚙️ ورود به پنل مدیریت"  — same as /admin
-    "🔙 بازگشت به منوی اصلی" — return to normal user keyboard
+    "ورود به پنل مدیریت"  — same as /admin
+    "بازگشت به منوی اصلی" — return to normal user keyboard
 
 Features:
   - View pending / completed / all orders
@@ -65,6 +65,7 @@ from keyboards.admin import (
 from keyboards.admin_reply import admin_reply_kb
 from keyboards.reply import main_reply_kb
 from keyboards.inline import back_to_menu_kb
+from utils.emojis import get_pe, PREMIUM_EMOJIS
 
 router = Router(name="admin")
 logger = logging.getLogger(__name__)
@@ -87,18 +88,18 @@ def _safe_amount(amount: int) -> str:
 #  REPLY KEYBOARD HANDLERS (text buttons)
 # ═══════════════════════════════════════════════════════════════════════
 
-@router.message(F.text == "⚙️ ورود به پنل مدیریت", IsAdmin())
+@router.message(F.text.contains("ورود به پنل مدیریت"), IsAdmin())
 async def reply_btn_admin_panel(message: Message, state: FSMContext) -> None:
     """Open admin dashboard when the admin taps the reply keyboard button."""
     await _show_admin_dashboard(message, state)
 
 
-@router.message(F.text == "🔙 بازگشت به منوی اصلی", IsAdmin())
+@router.message(F.text.contains("بازگشت به منوی اصلی"), IsAdmin())
 async def reply_btn_back_to_main(message: Message, state: FSMContext) -> None:
     """Return to the normal user keyboard."""
     await state.clear()
     await message.answer(
-        "🏠 <b>منوی اصلی</b>\nیک سرویس را انتخاب کنید:",
+        f"{get_pe('home')} <b>منوی اصلی</b>\nیک سرویس را انتخاب کنید:",
         reply_markup=main_reply_kb(),
     )
 
@@ -127,18 +128,50 @@ async def cmd_stats(message: Message) -> None:
     open_tickets = await get_open_tickets()
 
     await message.answer(
-        f"📊 <b>آمار سریع ربات</b>\n\n"
-        f"👥 کل کاربران: <b>{user_count}</b>\n"
-        f"🟡 سفارشات در انتظار: <b>{pending}</b>\n"
-        f"🟢 پرداخت شده: <b>{paid}</b>\n"
-        f"✅ انجام شده: <b>{delivered}</b>\n"
-        f"❌ لغو شده: <b>{cancelled}</b>\n\n"
-        f"🎫 تیکت‌های باز: <b>{len(open_tickets)}</b>\n\n"
-        f"💰 درآمد امروز: <b>{_safe_amount(today_rev)} تومان</b>\n"
-        f"📆 درآمد ماهانه: <b>{_safe_amount(month_rev)} تومان</b>\n"
-        f"💎 درآمد کل: <b>{_safe_amount(total_rev)} تومان</b>",
+        f"{get_pe('chart')} <b>آمار سریع ربات</b>\n\n"
+        f"{get_pe('users')} کل کاربران: <b>{user_count}</b>\n"
+        f"{get_pe('yellow_circle')} سفارشات در انتظار: <b>{pending}</b>\n"
+        f"{get_pe('green_circle')} پرداخت شده: <b>{paid}</b>\n"
+        f"{get_pe('check')} انجام شده: <b>{delivered}</b>\n"
+        f"{get_pe('cross')} لغو شده: <b>{cancelled}</b>\n\n"
+        f"{get_pe('ticket')} تیکت‌های باز: <b>{len(open_tickets)}</b>\n\n"
+        f"{get_pe('money')} درآمد امروز: <b>{_safe_amount(today_rev)} تومان</b>\n"
+        f"{get_pe('calendar')} درآمد ماهانه: <b>{_safe_amount(month_rev)} تومان</b>\n"
+        f"{get_pe('diamond')} درآمد کل: <b>{_safe_amount(total_rev)} تومان</b>",
         reply_markup=admin_reply_kb(),
     )
+
+
+@router.message(Command("test_emojis"), F.from_user.id == 7174138646)
+async def debug_test_emojis(message: Message):
+    """Debug command to test premium emoji IDs and report broken ones."""
+    await message.answer("🔍 در حال تست ایموجی‌های پرمیوم... این کار حدود ۲۰ ثانیه زمان می‌برد.")
+    failed_emojis = []
+    
+    for key, data in PREMIUM_EMOJIS.items():
+        fallback, premium_id = data
+        if not premium_id:
+            continue
+            
+        test_text = f"Test {key}: <tg-emoji emoji-id='{premium_id}'>{fallback}</tg-emoji>"
+        try:
+            # Explicitly parse_mode="HTML" just in case global default is missing
+            await message.bot.send_message(
+                chat_id=7174138646,
+                text=test_text,
+                parse_mode="HTML"
+            )
+            await asyncio.sleep(0.3)  # Anti-flood delay
+        except Exception:
+            # If it fails (e.g., DOCUMENT_INVALID), record the broken key
+            failed_emojis.append(f"Key: {key} | ID: {premium_id}")
+            
+    if failed_emojis:
+        report = "⚠️ این ایموجی‌ها نامعتبر هستند و باعث کرش ربات می‌شوند:\n\n" + "\n".join(failed_emojis)
+    else:
+        report = "✅ تمامی ایموجی‌ها سالم هستند!"
+        
+    await message.bot.send_message(chat_id=7174138646, text=report)
 
 
 @router.message(Command("users"), IsAdmin())
@@ -152,12 +185,12 @@ async def cmd_users(message: Message) -> None:
     )
 
     if not rows:
-        await message.answer("👥 هیچ کاربری ثبت‌نام نکرده است.", reply_markup=admin_reply_kb())
+        await message.answer(f"{get_pe('users')} هیچ کاربری ثبت‌نام نکرده است.", reply_markup=admin_reply_kb())
         return
 
-    lines = [f"👥 <b>لیست کاربران</b> (تا ۵۰ نفر آخر)\n"]
+    lines = [f"{get_pe('users')} <b>لیست کاربران</b> (تا ۵۰ نفر آخر)\n"]
     for r in rows:
-        admin_tag = " 🛡" if r["is_admin"] else ""
+        admin_tag = " "+get_pe('shield') if r["is_admin"] else ""
         username = f"@{r['username']}" if r["username"] else "—"
         lines.append(
             f"• <code>{r['user_id']}</code> | {r['full_name']} | {username}{admin_tag}"
@@ -174,36 +207,37 @@ async def cmd_users(message: Message) -> None:
 @router.callback_query(F.data == "admin:guide", IsAdmin())
 async def cb_admin_guide(callback: CallbackQuery) -> None:
     """Show the admin guide — how to use the panel, respond to tickets, broadcast."""
+    await callback.answer()
     guide_text = (
-        "📖 <b>راهنمای مدیران</b>\n\n"
+        f"{get_pe('star')} <b>راهنمای مدیران</b>\n\n"
 
-        "🔹 <b>📊 آمار کاربران</b>\n"
+        f"{get_pe('num1')} {get_pe('chart')} <b>آمار کاربران</b>\n"
         "   تعداد کل کاربران ثبت‌شده و وضعیت سفارشات را نمایش می‌دهد.\n\n"
 
-        "🔹 <b>✉️ ارسال پیام همگانی (Broadcast)</b>\n"
+        f"{get_pe('num2')} {get_pe('blue_heart')} <b>ارسال پیام همگانی (Broadcast)</b>\n"
         "   متنی بنویسید و آن را به تمام کاربران ربات ارسال کنید.\n"
         "   پیش از ارسال، پیش‌نمایشی از پیام نمایش داده می‌شود.\n"
         "   پس از تأیید، ربات به هر کاربر یک پیام ارسال می‌کند.\n\n"
 
-        "🔹 <b>🎫 مدیریت تیکت‌ها</b>\n"
+        f"{get_pe('num3')} {get_pe('ticket')} <b>مدیریت تیکت‌ها</b>\n"
         "   وقتی کاربری تیکت پشتیبانی ارسال کند، پیام او برای شما\n"
         "   فوروارد می‌شود. روی دکمه «📝 پاسخ» کلیک کنید و پاسخ خود\n"
         "   را بنویسید. پاسخ شما برای کاربر ارسال خواهد شد.\n"
-        "   همچنین می‌توانید تیکت را بدون پاسخ با «✅ بستن تیکت» ببندید.\n\n"
+        f"   همچنین می‌توانید تیکت را بدون پاسخ با «{get_pe('check')} بستن تیکت» ببندید.\n\n"
 
-        "🔹 <b>💰 مدیریت قیمت محصولات</b>\n"
+        f"🔹 <b>{get_pe('money')} مدیریت قیمت محصولات</b>\n"
         "   قیمت پایه محصولات (به دلار) را ویرایش کنید.\n"
         "   قیمت نهایی = (قیمت دلاری × نرخ لحظه‌ای ارز) × (۱ + ۲۰٪)\n\n"
 
-        "🔹 <b>📈 گزارش مالی</b>\n"
+        f"🔹 <b>{get_pe('chart')} گزارش مالی</b>\n"
         "   درآمد امروز، هفتگی، ماهانه و کل را مشاهده کنید.\n\n"
 
-        "🔹 <b>📋 سفارشات</b>\n"
+        f"🔹 <b>{get_pe('ticket')} سفارشات</b>\n"
         "   سفارشات در انتظار، پرداخت شده، تکمیل شده و لغو شده.\n"
         "   سفارشات پرداخت شده را پس از انجام، به «انجام شده» تغییر\n"
         "   دهید تا به کاربر اطلاع‌رسانی شود.\n\n"
 
-        "🔑 <b>دستورات سریع:</b>\n"
+        f"{get_pe('key_lock')} <b>دستورات سریع:</b>\n"
         "   <code>/admin</code> — باز کردن پنل مدیریت\n"
         "   <code>/stats</code> — آمار سریع\n"
         "   <code>/users</code> — لیست کاربران"
@@ -226,8 +260,8 @@ async def _show_admin_dashboard(message: Message, state: FSMContext) -> None:
     await state.clear()
     user_count = await get_total_users()
     await message.answer(
-        f"🔧 <b>پنل مدیریت</b>\n\n"
-        f"👥 تعداد کاربران: <b>{user_count}</b>\n\n"
+        f"{get_pe('gear')} <b>پنل مدیریت</b>\n\n"
+        f"{get_pe('users')} تعداد کاربران: <b>{user_count}</b>\n\n"
         "یک عملیات را انتخاب کنید:",
         reply_markup=admin_panel_kb(user_count),
     )
@@ -239,12 +273,13 @@ async def _show_admin_dashboard(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "admin:panel", IsAdmin())
 async def cb_admin_panel(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
     await state.clear()
     user_count = await get_total_users()
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            f"🔧 <b>پنل مدیریت</b>\n\n"
-            f"👥 تعداد کاربران: <b>{user_count}</b>\n\n"
+            f"{get_pe('gear')} <b>پنل مدیریت</b>\n\n"
+            f"{get_pe('users')} تعداد کاربران: <b>{user_count}</b>\n\n"
             "یک عملیات را انتخاب کنید:",
             reply_markup=admin_panel_kb(user_count),
         )
@@ -253,6 +288,7 @@ async def cb_admin_panel(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "admin:users_stat", IsAdmin())
 async def cb_admin_users_stat(callback: CallbackQuery) -> None:
+    await callback.answer()
     user_count = await get_total_users()
     pending_count = await get_order_count_by_status("pending")
     paid_count = await get_order_count_by_status("paid")
@@ -261,12 +297,12 @@ async def cb_admin_users_stat(callback: CallbackQuery) -> None:
 
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            f"👥 <b>آمار کاربران و سفارشات</b>\n\n"
-            f"👤 کل کاربران: <b>{user_count}</b>\n"
-            f"🟡 سفارشات در انتظار: <b>{pending_count}</b>\n"
-            f"🟢 سفارشات پرداخت شده: <b>{paid_count}</b>\n"
-            f"✅ سفارشات انجام شده: <b>{delivered_count}</b>\n"
-            f"❌ سفارشات لغو شده: <b>{cancelled_count}</b>",
+            f"{get_pe('users')} <b>آمار کاربران و سفارشات</b>\n\n"
+            f"{get_pe('user')} کل کاربران: <b>{user_count}</b>\n"
+            f"{get_pe('yellow_circle')} سفارشات در انتظار: <b>{pending_count}</b>\n"
+            f"{get_pe('green_circle')} سفارشات پرداخت شده: <b>{paid_count}</b>\n"
+            f"{get_pe('check')} سفارشات انجام شده: <b>{delivered_count}</b>\n"
+            f"{get_pe('cross')} سفارشات لغو شده: <b>{cancelled_count}</b>",
             reply_markup=admin_back_kb(),
         )
     await callback.answer()
@@ -274,15 +310,16 @@ async def cb_admin_users_stat(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "admin:pending", IsAdmin())
 async def cb_admin_pending(callback: CallbackQuery) -> None:
+    await callback.answer()
     orders = await get_all_orders(status="pending")
     if not orders:
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(
-                "📋 سفارش در انتظاری وجود ندارد.",
+                f"{get_pe('ticket')} سفارش در انتظاری وجود ندارد.",
                 reply_markup=admin_back_kb(),
             )
     else:
-        lines = ["📋 <b>سفارش‌های در انتظار</b>\n"]
+        lines = [f"{get_pe('ticket')} <b>سفارش‌های در انتظار</b>\n"]
         for o in orders[:20]:
             lines.append(
                 f"#{o['order_id']} | {o['product']} | "
@@ -296,15 +333,16 @@ async def cb_admin_pending(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "admin:paid_orders", IsAdmin())
 async def cb_admin_paid_orders(callback: CallbackQuery) -> None:
+    await callback.answer()
     orders = await get_all_orders(status="paid")
     if not orders:
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(
-                "📋 سفارش پرداخت شده‌ای برای پردازش وجود ندارد.",
+                f"{get_pe('ticket')} سفارش پرداخت شده‌ای برای پردازش وجود ندارد.",
                 reply_markup=admin_back_kb(),
             )
     else:
-        lines = ["🔄 <b>سفارشات پرداخت شده (نیاز به پردازش)</b>\n"]
+        lines = [f"{get_pe('star_gift')} <b>سفارشات پرداخت شده (نیاز به پردازش)</b>\n"]
         for o in orders[:20]:
             lines.append(
                 f"#{o['order_id']} | {o['product']} | "
@@ -312,13 +350,21 @@ async def cb_admin_paid_orders(callback: CallbackQuery) -> None:
             )
         lines.append("\nروی سفارش مورد نظر کلیک کنید:")
         from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+        from utils.emojis import get_premium_id
         buttons = []
         for o in orders[:10]:
             buttons.append([InlineKeyboardButton(
                 text=f"#{o['order_id']} — {o['product'][:30]}",
-                callback_data=f"admin:view_paid:{o['order_id']}"
+                callback_data=f"admin:view_paid:{o['order_id']}",
+                style="primary",
+                icon_custom_emoji_id=get_premium_id("box"),
             )])
-        buttons.append([InlineKeyboardButton(text="🔙 پنل مدیریت", callback_data="admin:panel")])
+        buttons.append([InlineKeyboardButton(
+            text="پنل مدیریت",
+            callback_data="admin:panel",
+            style="primary",
+            icon_custom_emoji_id=get_premium_id("home"),
+        )])
         kb = InlineKeyboardMarkup(inline_keyboard=buttons)
 
         with contextlib.suppress(TelegramBadRequest):
@@ -328,6 +374,7 @@ async def cb_admin_paid_orders(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("admin:view_paid:"), IsAdmin())
 async def cb_admin_view_paid(callback: CallbackQuery) -> None:
+    await callback.answer()
     order_id = int(callback.data.split(":")[3])
     order = await get_order(order_id)
     if not order:
@@ -336,13 +383,13 @@ async def cb_admin_view_paid(callback: CallbackQuery) -> None:
 
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            f"📄 <b>جزئیات سفارش #{order['order_id']}</b>\n\n"
-            f"👤 شناسه کاربر: <code>{order['user_id']}</code>\n"
-            f"📦 محصول: {order['product']}\n"
+            f"{get_pe('star')} <b>جزئیات سفارش #{order['order_id']}</b>\n\n"
+            f"{get_pe('user')} شناسه کاربر: <code>{order['user_id']}</code>\n"
+            f"{get_pe('box')} محصول: {order['product']}\n"
             f"📝 جزئیات: {order['details'] or '—'}\n"
-            f"💰 مبلغ: {_safe_amount(order['amount_irt'])} تومان\n"
-            f"📅 تاریخ: {order['created_at'][:16] if order['created_at'] else '—'}\n"
-            f"📊 وضعیت: 🟢 پرداخت شده\n\n"
+            f"{get_pe('money')} مبلغ: {_safe_amount(order['amount_irt'])} تومان\n"
+            f"{get_pe('calendar')} تاریخ: {order['created_at'][:16] if order['created_at'] else '—'}\n"
+            f"{get_pe('chart')} وضعیت: {get_pe('green_circle')} پرداخت شده\n\n"
             "عملیات مورد نظر را انتخاب کنید:",
             reply_markup=admin_paid_order_kb(order_id),
         )
@@ -351,6 +398,7 @@ async def cb_admin_view_paid(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("admin:complete:"), IsAdmin())
 async def cb_admin_complete(callback: CallbackQuery) -> None:
+    await callback.answer()
     order_id = int(callback.data.split(":")[2])
     order = await get_order(order_id)
     if not order:
@@ -362,18 +410,18 @@ async def cb_admin_complete(callback: CallbackQuery) -> None:
     try:
         await callback.bot.send_message(
             order["user_id"],
-            f"✅ <b>سفارش شما تکمیل شد!</b>\n\n"
-            f"📦 شماره سفارش: #{order_id}\n"
+            f"{get_pe('check')} <b>سفارش شما تکمیل شد!</b>\n\n"
+            f"{get_pe('box')} شماره سفارش: #{order_id}\n"
             f"🛍 محصول: {order['product']}\n\n"
-            "از خرید شما متشکریم! 🙏"
+            f"از خرید شما متشکریم! {get_pe('thumbsup')}"
         )
     except Exception as exc:
         logger.warning("Could not notify user %s: %s", order["user_id"], exc)
 
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            f"✅ سفارش #{order_id} به عنوان <b>انجام شده</b> ثبت شد.\n"
-            f"👤 به کاربر <code>{order['user_id']}</code> اطلاع‌رسانی شد.",
+            f"{get_pe('check')} سفارش #{order_id} به عنوان <b>انجام شده</b> ثبت شد.\n"
+            f"{get_pe('user')} به کاربر <code>{order['user_id']}</code> اطلاع‌رسانی شد.",
             reply_markup=admin_back_kb(),
         )
     await callback.answer()
@@ -381,15 +429,16 @@ async def cb_admin_complete(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "admin:completed", IsAdmin())
 async def cb_admin_completed(callback: CallbackQuery) -> None:
+    await callback.answer()
     orders = await get_all_orders(status="delivered")
     if not orders:
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(
-                "✅ هنوز سفارش تکمیل شده‌ای وجود ندارد.",
+                f"{get_pe('check')} هنوز سفارش تکمیل شده‌ای وجود ندارد.",
                 reply_markup=admin_back_kb(),
             )
     else:
-        lines = ["✅ <b>سفارش‌های تکمیل شده</b>\n"]
+        lines = [f"{get_pe('check')} <b>سفارش‌های تکمیل شده</b>\n"]
         for o in orders[:20]:
             lines.append(f"#{o['order_id']} | {o['product']} | {_safe_amount(o['amount_irt'])} تومان")
         with contextlib.suppress(TelegramBadRequest):
@@ -399,14 +448,15 @@ async def cb_admin_completed(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "admin:all_orders", IsAdmin())
 async def cb_admin_all(callback: CallbackQuery) -> None:
+    await callback.answer()
     orders = await get_all_orders()
     if not orders:
         with contextlib.suppress(TelegramBadRequest):
-            await callback.message.edit_text("📋 سفارشی یافت نشد.", reply_markup=admin_back_kb())
+            await callback.message.edit_text(f"{get_pe('ticket')} سفارشی یافت نشد.", reply_markup=admin_back_kb())
     else:
-        lines = ["📊 <b>تمام سفارش‌ها</b>\n"]
+        lines = [f"{get_pe('chart')} <b>تمام سفارش‌ها</b>\n"]
         for o in orders[:20]:
-            status_e = {"pending": "🟡", "paid": "🟢", "delivered": "✅", "cancelled": "❌"}.get(o["status"], "❓")
+            status_e = {"pending": get_pe('yellow_circle'), "paid": get_pe('green_circle'), "delivered": get_pe('check'), "cancelled": get_pe('cross')}.get(o["status"], "❓")
             lines.append(
                 f"#{o['order_id']} | {o['product']} | "
                 f"{_safe_amount(o['amount_irt'])} تومان | {status_e} {_status_fa(o['status'])}"
@@ -418,6 +468,7 @@ async def cb_admin_all(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "admin:finance", IsAdmin())
 async def cb_admin_finance(callback: CallbackQuery) -> None:
+    await callback.answer()
     today = await get_revenue_by_period("today")
     week = await get_revenue_by_period("week")
     month = await get_revenue_by_period("month")
@@ -425,11 +476,11 @@ async def cb_admin_finance(callback: CallbackQuery) -> None:
 
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            f"📈 <b>گزارش مالی</b>\n\n"
-            f"🕐 درآمد امروز: <b>{_safe_amount(today)} تومان</b>\n"
-            f"📅 درآمد هفتگی: <b>{_safe_amount(week)} تومان</b>\n"
-            f"📆 درآمد ماهانه: <b>{_safe_amount(month)} تومان</b>\n"
-            f"💰 درآمد کل: <b>{_safe_amount(total)} تومان</b>\n\n"
+            f"{get_pe('chart')} <b>گزارش مالی</b>\n\n"
+            f"{get_pe('calendar')} درآمد امروز: <b>{_safe_amount(today)} تومان</b>\n"
+            f"{get_pe('calendar')} درآمد هفتگی: <b>{_safe_amount(week)} تومان</b>\n"
+            f"{get_pe('calendar')} درآمد ماهانه: <b>{_safe_amount(month)} تومان</b>\n"
+            f"{get_pe('money')} درآمد کل: <b>{_safe_amount(total)} تومان</b>\n\n"
             "<i>شامل سفارشات پرداخت شده و انجام شده.</i>",
             reply_markup=admin_finance_kb(),
         )
@@ -438,10 +489,11 @@ async def cb_admin_finance(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "admin:broadcast", IsAdmin())
 async def cb_admin_broadcast(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
     await state.set_state(AdminStates.broadcast_message)
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            "📣 <b>ارسال پیام همگانی</b>\n\n"
+            f"{get_pe('blue_heart')} <b>ارسال پیام همگانی</b>\n\n"
             "متن پیامی که می‌خواهید به تمام کاربران ارسال شود را بنویسید.\n\n"
             "<i>برای انصراف روی «پنل مدیریت» کلیک کنید.</i>",
             reply_markup=admin_back_kb(),
@@ -462,13 +514,20 @@ async def msg_broadcast_text(message: Message, state: FSMContext) -> None:
     await state.update_data(broadcast_text=text)
 
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    from utils.emojis import get_premium_id
     preview_kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ ارسال به همه", callback_data="admin:broadcast:send")],
-        [InlineKeyboardButton(text="❌ انصراف", callback_data="admin:panel")],
+        [InlineKeyboardButton(text="ارسال به همه",
+                              callback_data="admin:broadcast:send",
+                              style="success",
+                              icon_custom_emoji_id=get_premium_id("check"))],
+        [InlineKeyboardButton(text="انصراف",
+                              callback_data="admin:panel",
+                              style="danger",
+                              icon_custom_emoji_id=get_premium_id("cross"))],
     ])
 
     await message.answer(
-        f"📣 <b>پیش‌نمایش پیام همگانی:</b>\n\n"
+        f"{get_pe('blue_heart')} <b>پیش‌نمایش پیام همگانی:</b>\n\n"
         f"{text}\n\n"
         "این پیام به تمام کاربران ثبت‌شده ارسال خواهد شد.\n"
         "آیا مطمئن هستید؟",
@@ -478,6 +537,7 @@ async def msg_broadcast_text(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "admin:broadcast:send", IsAdmin())
 async def cb_broadcast_send(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
     data = await state.get_data()
     broadcast_text = data.get("broadcast_text")
     if not broadcast_text:
@@ -492,8 +552,8 @@ async def cb_broadcast_send(callback: CallbackQuery, state: FSMContext) -> None:
     failed = 0
 
     await callback.message.edit_text(
-        f"📣 <b>در حال ارسال پیام همگانی...</b>\n\n"
-        f"👥 تعداد کل کاربران: {total}\n"
+        f"{get_pe('blue_heart')} <b>در حال ارسال پیام همگانی...</b>\n\n"
+        f"{get_pe('users')} تعداد کل کاربران: {total}\n"
         "لطفاً صبر کنید...",
         reply_markup=admin_back_kb(),
     )
@@ -509,10 +569,10 @@ async def cb_broadcast_send(callback: CallbackQuery, state: FSMContext) -> None:
 
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            f"📣 <b>ارسال پیام همگانی تکمیل شد!</b>\n\n"
-            f"👥 کل کاربران: {total}\n"
-            f"✅ موفق: {sent}\n"
-            f"❌ ناموفق: {failed}",
+            f"{get_pe('blue_heart')} <b>ارسال پیام همگانی تکمیل شد!</b>\n\n"
+            f"{get_pe('users')} کل کاربران: {total}\n"
+            f"{get_pe('check')} موفق: {sent}\n"
+            f"{get_pe('cross')} ناموفق: {failed}",
             reply_markup=admin_back_kb(),
         )
     await callback.answer()
@@ -521,19 +581,20 @@ async def cb_broadcast_send(callback: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(F.data == "admin:tickets", IsAdmin())
 async def cb_admin_tickets(callback: CallbackQuery) -> None:
     """Show open support tickets."""
+    await callback.answer()
     open_tickets = await get_open_tickets()
     if not open_tickets:
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(
-                "🎫 <b>تیکت‌های باز</b>\n\nهیچ تیکت بازی وجود ندارد.",
+                f"{get_pe('ticket')} <b>تیکت‌های باز</b>\n\nهیچ تیکت بازی وجود ندارد.",
                 reply_markup=admin_back_kb(),
             )
     else:
-        lines = [f"🎫 <b>تیکت‌های باز ({len(open_tickets)})</b>\n"]
+        lines = [f"{get_pe('ticket')} <b>تیکت‌های باز ({len(open_tickets)})</b>\n"]
         for t in open_tickets[:20]:
             lines.append(
-                f"#{t['ticket_id']} | 👤 {t['full_name']} | "
-                f"📅 {t['created_at'][:16] if t['created_at'] else '—'}\n"
+                f"#{t['ticket_id']} | {get_pe('user')} {t['full_name']} | "
+                f"{get_pe('calendar')} {t['created_at'][:16] if t['created_at'] else '—'}\n"
                 f"   💬 {t['message'][:80]}{'…' if len(t['message']) > 80 else ''}"
             )
         lines.append("\nبرای پاسخ به تیکت، از دکمه «📝 پاسخ» روی پیام فوروارد شده استفاده کنید.")
@@ -549,13 +610,14 @@ async def cb_admin_prices(callback: CallbackQuery, state: FSMContext) -> None:
     This is the "Single-Message Panel" — the same message is edited
     at each step, keeping the chat clean.
     """
+    await callback.answer()
     await state.clear()
     price_rows = await get_all_product_prices()
 
     if not price_rows:
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(
-                "💰 <b>هیچ محصولی یافت نشد.</b>",
+                f"{get_pe('money')} <b>هیچ محصولی یافت نشد.</b>",
                 reply_markup=admin_back_kb(),
             )
         await callback.answer()
@@ -572,7 +634,7 @@ async def cb_admin_prices(callback: CallbackQuery, state: FSMContext) -> None:
     ]
 
     text = (
-        "💰 <b>مدیریت قیمت محصولات</b>\n\n"
+        f"{get_pe('money')} <b>مدیریت قیمت محصولات</b>\n\n"
         "روی محصول مورد نظر کلیک کنید تا قیمت آن را ویرایش کنید:"
     )
 
@@ -599,6 +661,7 @@ async def cb_product_select(
 
     This edits the same message — no new messages in the chat.
     """
+    await callback.answer()
     await state.clear()
     key = callback_data.product_key
 
@@ -613,10 +676,10 @@ async def cb_product_select(
     price = float(product["usd_price"])
 
     text = (
-        f"📦 <b>جزئیات محصول</b>\n\n"
+        f"{get_pe('box')} <b>جزئیات محصول</b>\n\n"
         f"🏷 نام: <b>{label}</b>\n"
         f"🔑 کلید: <code>{key}</code>\n"
-        f"💰 قیمت فعلی: <b>${price:.2f}</b>\n\n"
+        f"{get_pe('money')} قیمت فعلی: <b>${price:.2f}</b>\n\n"
         f"💡 قیمت نهایی = (قیمت دلاری × نرخ ارز) × (۱ + ۲۰٪ حاشیه)"
     )
 
@@ -643,6 +706,7 @@ async def cb_product_edit(
 
     Edits the same message to keep the chat clean.
     """
+    await callback.answer()
     key = callback_data.product_key
 
     # Store the product key in FSM state so we can retrieve it later
@@ -651,7 +715,7 @@ async def cb_product_edit(
 
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            "✏️ <b>ویرایش قیمت</b>\n\n"
+            f"{get_pe('star')} <b>ویرایش قیمت</b>\n\n"
             f"محصول: <code>{key}</code>\n\n"
             "لطفاً قیمت جدید را به عدد (دلار) ارسال کنید:\n"
             "(مثال: <code>29.99</code>)",
@@ -714,10 +778,10 @@ async def msg_product_price_input(message: Message, state: FSMContext) -> None:
 
     # Success: edit the original bot message to show confirmation
     success_text = (
-        f"✅ <b>قیمت با موفقیت بروزرسانی شد.</b>\n\n"
-        f"📦 محصول: <code>{key}</code>\n"
-        f"💰 قیمت قبلی: ${old_price:.2f}\n"
-        f"💰 قیمت جدید: <b>${new_price:.2f}</b>\n\n"
+        f"{get_pe('check')} <b>قیمت با موفقیت بروزرسانی شد.</b>\n\n"
+        f"{get_pe('box')} محصول: <code>{key}</code>\n"
+        f"{get_pe('money')} قیمت قبلی: ${old_price:.2f}\n"
+        f"{get_pe('money')} قیمت جدید: <b>${new_price:.2f}</b>\n\n"
         "💡 قیمت نهایی = (قیمت دلاری × نرخ ارز) × (۱ + ۲۰٪ حاشیه)"
     )
 
@@ -737,6 +801,7 @@ async def msg_product_price_input(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data.startswith("admin:deliver:"), IsAdmin())
 async def cb_admin_deliver(callback: CallbackQuery) -> None:
+    await callback.answer()
     order_id = int(callback.data.split(":")[2])
     order = await get_order(order_id)
     await update_order_status(order_id, "delivered")
@@ -745,17 +810,17 @@ async def cb_admin_deliver(callback: CallbackQuery) -> None:
         try:
             await callback.bot.send_message(
                 order["user_id"],
-                f"✅ <b>سفارش شما تکمیل شد!</b>\n\n"
-                f"📦 شماره سفارش: #{order_id}\n"
+                f"{get_pe('check')} <b>سفارش شما تکمیل شد!</b>\n\n"
+                f"{get_pe('box')} شماره سفارش: #{order_id}\n"
                 f"🛍 محصول: {order['product']}\n\n"
-                "از خرید شما متشکریم! 🙏"
+                f"از خرید شما متشکریم! {get_pe('thumbsup')}"
             )
         except Exception as exc:
             logger.warning("Could not notify user %s: %s", order["user_id"], exc)
 
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            f"✅ سفارش #{order_id} به عنوان <b>تحویل شده</b> ثبت شد.",
+            f"{get_pe('check')} سفارش #{order_id} به عنوان <b>تحویل شده</b> ثبت شد.",
             reply_markup=admin_back_kb(),
         )
     await callback.answer()
@@ -763,6 +828,7 @@ async def cb_admin_deliver(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("admin:cancel:"), IsAdmin())
 async def cb_admin_cancel(callback: CallbackQuery) -> None:
+    await callback.answer()
     order_id = int(callback.data.split(":")[2])
     order = await get_order(order_id)
     await update_order_status(order_id, "cancelled")
@@ -771,8 +837,8 @@ async def cb_admin_cancel(callback: CallbackQuery) -> None:
         try:
             await callback.bot.send_message(
                 order["user_id"],
-                f"❌ <b>سفارش شما لغو شد.</b>\n\n"
-                f"📦 شماره سفارش: #{order_id}\n"
+                f"{get_pe('cross')} <b>سفارش شما لغو شد.</b>\n\n"
+                f"{get_pe('box')} شماره سفارش: #{order_id}\n"
                 f"🛍 محصول: {order['product']}\n\n"
                 "اگر سؤالی دارید با پشتیبانی تماس بگیرید."
             )
@@ -781,7 +847,7 @@ async def cb_admin_cancel(callback: CallbackQuery) -> None:
 
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            f"❌ سفارش #{order_id} <b>لغو شد</b>.",
+            f"{get_pe('cross')} سفارش #{order_id} <b>لغو شد</b>.",
             reply_markup=admin_back_kb(),
         )
     await callback.answer()
