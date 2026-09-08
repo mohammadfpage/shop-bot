@@ -255,7 +255,7 @@ async def zarinpal_verify(
         fail_payment,
         get_order,
     )
-    from utils.zarinpal import verify_payment
+    from utils.zarinpal import verify_payment, amounts_match
 
     payment = await get_payment_by_authority(Authority)
     if payment is None:
@@ -292,15 +292,26 @@ async def zarinpal_verify(
 
     # ── Verify with Zarinpal API ──────────────────────────────────
     # The amount sent to Zarinpal was ``amount_irt`` (an int fetched
-    # from the DB).  We must compare using the same int.
-    result = await verify_payment(Authority, int(amount_irt))
+    # from the DB).  We must verify with that exact frozen value and
+    # never recalculate from a live exchange rate.
+    expected_amount = int(amount_irt)
+    logger.info(
+        "Verifying authority=%s with frozen amount=%s (order #%s)",
+        Authority, expected_amount, order_id,
+    )
+    result = await verify_payment(Authority, expected_amount)
 
-    # Build a robust comparison: cast both sides to int so that
-    # Decimal / float / str mismatches never cause a false negative.
+    # Compare the gateway's returned amount against the DB-frozen int.
+    # ``amounts_match`` also tolerates a 10x (Toman vs Rial) echo.
+    # If Zarinpal did not return an amount, rely on the API code alone.
     if result.amount_irt is not None:
-        amount_matches = int(result.amount_irt) == int(amount_irt)
+        amount_matches = amounts_match(expected_amount, int(result.amount_irt))
+        if amount_matches and int(result.amount_irt) != expected_amount:
+            logger.warning(
+                "Amount unit drift for order #%s: DB=%s gateway=%s (treating 10x as match)",
+                order_id, expected_amount, result.amount_irt,
+            )
     else:
-        # Zarinpal did not return an amount — rely on the API code alone.
         amount_matches = True
 
     if not (

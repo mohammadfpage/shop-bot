@@ -16,7 +16,7 @@ from database.db import (
 )
 from keyboards.inline import back_to_menu_kb
 from utils.delivery import deliver_product
-from utils.zarinpal import verify_payment
+from utils.zarinpal import verify_payment, amounts_match
 from utils.emojis import get_pe
 
 router = Router(name="payment")
@@ -63,9 +63,10 @@ async def cb_pay_check(callback: CallbackQuery, state: FSMContext) -> None:
         )
 
         # Compare the gateway's returned amount against the DB-stored int.
+        # ``amounts_match`` also tolerates a 10x (Toman vs Rial) echo.
         # If Zarinpal did not return an amount, rely on the API code alone.
         if result.amount_irt is not None:
-            amount_matches = int(result.amount_irt) == expected_amount
+            amount_matches = amounts_match(expected_amount, int(result.amount_irt))
         else:
             amount_matches = True
 
@@ -76,13 +77,13 @@ async def cb_pay_check(callback: CallbackQuery, state: FSMContext) -> None:
             and amount_matches
         ):
             await fail_payment(payment_id)
-        with contextlib.suppress(TelegramBadRequest):
-            await callback.message.edit_text(
-                f"{get_pe('cross')} <b>بررسی پرداخت ناموفق بود.</b>\n\n"
-                f"دلیل: {result.message or 'مبلغ پرداخت با سفارش مطابقت ندارد.'}\n\n"
-                "اگر فکر می‌کنید این خطا است، لطفاً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید.",
-                reply_markup=back_to_menu_kb(),
-            )
+            with contextlib.suppress(TelegramBadRequest):
+                await callback.message.edit_text(
+                    f"{get_pe('cross')} <b>بررسی پرداخت ناموفق بود.</b>\n\n"
+                    f"دلیل: {result.message or 'مبلغ پرداخت با سفارش مطابقت ندارد.'}\n\n"
+                    "اگر فکر می‌کنید این خطا است، لطفاً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید.",
+                    reply_markup=back_to_menu_kb(),
+                )
             return
 
         # This conditional transition prevents duplicate fulfillment.

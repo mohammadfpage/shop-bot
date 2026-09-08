@@ -14,6 +14,24 @@ REQUEST_URL = "https://api.zarinpal.com/pg/v4/payment/request.json"
 VERIFY_URL = "https://api.zarinpal.com/pg/v4/payment/verify.json"
 START_PAY_URL = "https://www.zarinpal.com/pg/StartPay/"
 
+# Zarinpal v4 currency unit. "IRT" = Toman (default), "IRR" = Rial.
+# Both the request and the frozen DB amount MUST use the same unit.
+REQUEST_CURRENCY = "IRT"
+
+
+def amounts_match(expected: int, returned: int) -> bool:
+    """Compare the frozen DB amount with the amount Zarinpal echoes back.
+
+    Zarinpal sometimes reports the verified amount in Rial even when the
+    payment was requested in Toman (1 Toman = 10 Rial). Treat an exact
+    10x match as equivalent instead of failing the whole verification.
+    """
+    if returned == expected:
+        return True
+    if returned == expected * 10:
+        return True
+    return False
+
 
 @dataclass
 class PaymentRequestResult:
@@ -86,13 +104,17 @@ async def request_payment(
     user_phone: str = "",
 ) -> PaymentRequestResult:
     """Create a Zarinpal v4 payment using the amount directly in Tomans."""
-    if not isinstance(amount_irt, int) or isinstance(amount_irt, bool) or amount_irt <= 0:
+    try:
+        amount_irt = int(amount_irt)
+    except (TypeError, ValueError):
+        return PaymentRequestResult(False, message="Invalid payment amount")
+    if isinstance(amount_irt, bool) or amount_irt <= 0:
         return PaymentRequestResult(False, message="Invalid payment amount")
 
     payload: dict[str, Any] = {
         "merchant_id": config.ZARINPAL_MERCHANT_ID,
         "amount": amount_irt,
-        "currency": "IRT",
+        "currency": REQUEST_CURRENCY,
         "description": description,
         "callback_url": config.ZARINPAL_CALLBACK_URL,
     }
@@ -125,14 +147,23 @@ async def request_payment(
 
 
 async def verify_payment(authority: str, amount_irt: int) -> PaymentVerifyResult:
-    """Verify a payment with the exact persisted IRT amount."""
-    if not authority or not isinstance(amount_irt, int) or isinstance(amount_irt, bool):
+    """Verify a payment with the exact persisted IRT amount.
+
+    NOTE: The v4 ``verify.json`` endpoint does NOT accept a ``currency``
+    field (its payload is only ``merchant_id`` / ``amount`` / ``authority``).
+    The verified amount MUST be in the same unit that was used when the
+    payment was created (``REQUEST_CURRENCY`` = Toman).
+    """
+    try:
+        amount_irt = int(amount_irt)
+    except (TypeError, ValueError):
+        return PaymentVerifyResult(False, message="Invalid payment verification data")
+    if not authority or isinstance(amount_irt, bool):
         return PaymentVerifyResult(False, message="Invalid payment verification data")
 
     payload = {
         "merchant_id": config.ZARINPAL_MERCHANT_ID,
         "amount": amount_irt,
-        "currency": "IRT",
         "authority": authority,
     }
 
