@@ -40,7 +40,7 @@ class Config:
     # ─── Webhook Server ────────────────────────────────────────────────
     WEBHOOK_HOST: str = os.getenv("WEBHOOK_HOST", "0.0.0.0")
     WEBHOOK_PORT: int = int(os.getenv("WEBHOOK_PORT", "8443"))
-    WEBHOOK_BASE_URL: str = os.getenv("WEBHOOK_BASE_URL", "https://pixel-bot-4odw.onrender.com")
+    WEBHOOK_BASE_URL: str = os.getenv("WEBHOOK_BASE_URL", "https://pixel-shop.duckdns.org")
     WEBHOOK_SECRET: str = os.getenv("WEBHOOK_SECRET", "")
 
     # ─── Database (PostgreSQL via Neon) ──────────────────────────────────

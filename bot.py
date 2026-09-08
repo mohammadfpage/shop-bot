@@ -1,26 +1,28 @@
 """
 Telegram E-Commerce & Service Bot — main entry point.
 
-Architecture (Hybrid: Long Polling + FastAPI):
-    • FastAPI binds to the required $PORT and keeps the instance alive.
+Architecture (Webhook + FastAPI):
+    • FastAPI binds to WEBHOOK_HOST:WEBHOOK_PORT.
     • Lifespan context manager:
         1.  Initializes PostgreSQL
         2.  Starts background rate-fetcher (BrsApi, every 5 min)
-        3.  Clears any old webhook from Telegram
-        4.  Starts Telegram polling as a background asyncio task
+        3.  Sets the Telegram webhook on startup
+        4.  Deletes the webhook on shutdown
+    • A /webhook POST endpoint receives Telegram updates and feeds them
+      into the aiogram dispatcher.
     • A /verify GET endpoint receives Zarinpal payment callbacks.
     • A /health, /ping, and / endpoint are available for uptime pings.
-    • On shutdown, polling is cancelled and resources are cleaned up.
 
 Usage:
-    python bot.py   # starts FastAPI + polling hybrid server
+    python bot.py   # starts FastAPI webhook server
 
 Environment variables:
     BOT_TOKEN          — Telegram Bot API token
     ADMIN_IDS          — comma-separated Telegram user IDs
     DATABASE_URL       — PostgreSQL connection string (Neon.tech)
     WEBHOOK_HOST       — bind address (default 0.0.0.0)
-    WEBHOOK_PORT       — bind port    (default 8443, Render sets $PORT)
+    WEBHOOK_PORT       — bind port    (default 8443)
+    WEBHOOK_BASE_URL   — public URL   (default https://pixel-shop.duckdns.org)
 """
 
 import asyncio
@@ -80,10 +82,6 @@ async def global_error_handler(event: ErrorEvent) -> None:
         user_id = update.callback_query.from_user.id
 
     if user_id is not None:
-        # Use the module-level bot (initialized in lifespan) which is the most
-        # reliable reference. `event.bot` can be None when the error is raised
-        # before a bot is bound to the update (e.g. in middleware), which
-        # previously caused `'NoneType' object has no attribute 'send_message'`.
         bot_instance: Bot | None = event.bot or bot
         if bot_instance is None:
             logger.error(
@@ -136,14 +134,18 @@ def register_routers(dispatcher: Dispatcher) -> None:
     )
 
 
-# ─── FastAPI lifespan (hybrid: polling + FastAPI for payments) ───────
+# ─── Webhook path constant ──────────────────────────────────────────
+WEBHOOK_PATH = "/webhook"
+
+
+# ─── FastAPI lifespan (webhook mode) ────────────────────────────────
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Start everything concurrently and clean up on shutdown.
+    """Start everything on startup and clean up on shutdown.
 
-    Runs FastAPI for Zarinpal callbacks and health checks, while
-    Telegram polling runs as a background asyncio task.
+    Runs FastAPI for Telegram webhook, Zarinpal callbacks, and health checks.
+    On startup: sets the webhook. On shutdown: deletes the webhook.
     """
     global bot, dp
 
@@ -175,49 +177,23 @@ async def lifespan(app: FastAPI):
     dp.errors.register(global_error_handler)
     register_routers(dp)
 
-    # ── 4. Clear old webhook (from previous Render/webhook deployments) ─
-    await bot.delete_webhook(drop_pending_updates=True)
-    logger.info("Old webhook cleared (if any).")
-
-    # ── 5. Start Telegram polling as a background task ───────────────
-    polling_task = asyncio.create_task(dp.start_polling(bot))
-    logger.info(
-        "Telegram long-polling started (task: %s)",
-        polling_task.get_name(),
+    # ── 4. Set the webhook on Telegram ──────────────────────────────
+    webhook_url = f"{config.WEBHOOK_BASE_URL}{WEBHOOK_PATH}"
+    await bot.set_webhook(
+        url=webhook_url,
+        drop_pending_updates=True,
+        secret_token=config.WEBHOOK_SECRET or None,
     )
+    logger.info("Webhook set to: %s", webhook_url)
 
-    # ── 6. Monitor polling task for unexpected crashes ───────────────
-    async def _polling_monitor(task: asyncio.Task) -> None:
-        """Log if the polling task terminates unexpectedly."""
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass  # Expected during shutdown
-        except Exception:
-            logger.exception(
-                "Telegram polling task crashed unexpectedly! "
-                "The bot will stop receiving updates."
-            )
-
-    polling_monitor_task = asyncio.create_task(_polling_monitor(polling_task))
-
-    yield  # ── FastAPI is now live, health checks and /verify work ──
+    yield  # ── FastAPI is now live, webhook is active ────────────────
 
     # ── Shutdown ─────────────────────────────────────────────────────
     logger.info("Shutting down …")
 
-    # Stop polling
-    polling_task.cancel()
-    try:
-        await polling_task
-    except asyncio.CancelledError:
-        pass
-    polling_monitor_task.cancel()
-    try:
-        await polling_monitor_task
-    except asyncio.CancelledError:
-        pass
-    logger.info("Polling stopped.")
+    # Delete the webhook
+    await bot.delete_webhook(drop_pending_updates=True)
+    logger.info("Webhook deleted.")
 
     # Cancel background tasks
     rate_cache.stop()
@@ -237,7 +213,21 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Telegram Bot Server", lifespan=lifespan)
 
 
-# ─── Zarinpal /verify endpoint (merged from webhook/app.py) ─────────
+# ─── Telegram Webhook endpoint ──────────────────────────────────────
+
+@app.post(WEBHOOK_PATH)
+async def telegram_webhook(request: Request) -> JSONResponse:
+    """Receive Telegram updates and feed them to the aiogram dispatcher."""
+    update_data = await request.json()
+    update = Update.model_validate(update_data, context={"bot": bot})
+
+    # Feed the update into the aiogram dispatcher
+    await dp.feed_update(bot, update)
+
+    return JSONResponse({"ok": True})
+
+
+# ─── Zarinpal /verify endpoint ──────────────────────────────────────
 
 @app.get("/verify")
 async def zarinpal_verify(
@@ -276,9 +266,7 @@ async def zarinpal_verify(
         )
 
     if payment["status"] == "verified":
-        return HTMLResponse(
-            _success_page("Payment was already verified. You may close this window and return to the bot."),
-        )
+        return HTMLResponse(_success_page("Payment was already verified. You may close this window and return to the bot."))
 
     full_payment = await get_payment(payment["payment_id"])
     if full_payment is None:
@@ -371,7 +359,7 @@ async def _background_delivery(order_id: int, user_id: int, product: str, detail
 @app.get("/", response_class=JSONResponse)
 async def root():
     """Root endpoint — confirms the service is alive."""
-    return JSONResponse({"status": "ok", "mode": "polling"})
+    return JSONResponse({"status": "ok", "mode": "webhook"})
 
 
 @app.get("/ping", response_class=JSONResponse)
@@ -391,7 +379,7 @@ async def health_check():
     from utils.cache import rate_cache
     return JSONResponse({
         "status": "ok",
-        "mode": "polling",
+        "mode": "webhook",
         "rate_cache_ready": rate_cache.is_ready(),
         "rate_last_update": rate_cache.last_updated_str(),
     })
