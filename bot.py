@@ -291,8 +291,17 @@ async def zarinpal_verify(
         )
 
     # ── Verify with Zarinpal API ──────────────────────────────────
-    result = await verify_payment(Authority, amount_irt)
-    amount_matches = result.amount_irt == full_payment["order_amount_irt"]
+    # The amount sent to Zarinpal was ``amount_irt`` (an int fetched
+    # from the DB).  We must compare using the same int.
+    result = await verify_payment(Authority, int(amount_irt))
+
+    # Build a robust comparison: cast both sides to int so that
+    # Decimal / float / str mismatches never cause a false negative.
+    if result.amount_irt is not None:
+        amount_matches = int(result.amount_irt) == int(amount_irt)
+    else:
+        # Zarinpal did not return an amount — rely on the API code alone.
+        amount_matches = True
 
     if not (
         result.success

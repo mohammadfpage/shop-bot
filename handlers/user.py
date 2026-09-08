@@ -5,6 +5,7 @@ All user-facing text in Persian (فارسی).
 
 import contextlib
 from aiogram import Router, F
+from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart, Command
 from aiogram.exceptions import TelegramBadRequest
@@ -62,7 +63,7 @@ async def cmd_start(message: Message) -> None:
         "━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"{get_pe('box')} <b>خدمات ما:</b>\n"
         f"{get_pe('star')} تلگرام پرمیوم (ماهانه تا سالانه)\n"
-        f"{get_pe('gift')} گیفت و استارز تلگرام\n"
+        f"{get_pe('heart_simple')} گیفت و استارز تلگرام\n"
         f"{get_pe('bot')} اکانت پرمیوم هوش مصنوعی\n"
         f"{get_pe('fire')} خدمات طراحی حرفه‌ای\n"
         f"{get_pe('shield')} امنیت صفحه و اکانت\n"
@@ -160,18 +161,16 @@ async def reply_btn_profile(message: Message) -> None:
 # ─── Reply keyboard: 🎧 پشتیبانی ───────────────────────────────────
 
 @router.message(F.text.contains("پشتیبانی"))
-async def reply_btn_support(message: Message) -> None:
-    """Redirect to the ticket system."""
-    # Import here to avoid circular imports
-    from handlers.ticket import router as ticket_router
-    # Trigger the ticket flow by sending the same message through the ticket handler
-    # We just show a brief instruction since the ticket handler catches the text
+async def reply_btn_support(message: Message, state: FSMContext) -> None:
+    """Redirect to the ticket system and set FSM state so the next message is captured."""
+    from states.states import TicketStates
+    await state.set_state(TicketStates.waiting_message)
     await message.answer(
         f"{get_pe('call')} <b>پشتیبانی</b>\n\n"
-        f"{get_pe('ticket')} برای ارسال تیکت پشتیبانی، پیام خود را ارسال کنید.\n"
+        f"{get_pe('ticket')} لطفاً پیام یا مشکل خود را به صورت متنی بنویسید.\n"
         "پیام شما مستقیماً به تیم پشتیبانی ارسال خواهد شد.\n\n"
-        f"{get_pe('star')} اگر سؤالی دارید، پیام خود را بنویسید و ارسال کنید.",
-        reply_markup=main_reply_kb(),
+        "برای انصراف، روی دکمه «🔙 بازگشت به منو» کلیک کنید.",
+        reply_markup=back_to_menu_kb(),
     )
 
 

@@ -48,7 +48,7 @@ async def cb_enter_stars_state(callback: CallbackQuery, state: FSMContext) -> No
     await state.set_state(TelegramStarsStates.enter_quantity)
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            f"{get_pe('star_gift')} <b>خرید استارز تلگرام</b>\n\n"
+            f"{get_pe('purse')} <b>خرید استارز تلگرام</b>\n\n"
             "چه تعداد استارز می‌خواهید؟\n"
             "<i>حداقل: ۵۰ استارز</i>\n\n"
             "تعداد را به صورت پیام ارسال کنید (مثال: <code>100</code>).",
@@ -65,7 +65,7 @@ async def cb_stars_back(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            f"{get_pe('star_gift')} <b>خرید استارز تلگرام</b>\n\n"
+            f"{get_pe('purse')} <b>خرید استارز تلگرام</b>\n\n"
             "چه تعداد استارز می‌خواهید؟\n"
             "<i>حداقل: ۵۰ استارز</i>\n\n"
             "تعداد را به صورت پیام ارسال کنید.",
@@ -95,7 +95,7 @@ async def msg_stars_quantity(message: Message, state: FSMContext) -> None:
     await state.set_state(TelegramStarsStates.choose_target)
 
     await message.answer(
-        f"{get_pe('star_gift')} <b>{qty} استارز تلگرام</b>\n\n"
+        f"{get_pe('purse')} <b>{qty} استارز تلگرام</b>\n\n"
         f"{get_pe('money')} قیمت: <b>{price_str}</b>\n\n"
         "این استارزها برای چه کسی است؟",
         reply_markup=stars_target_kb(),
@@ -272,7 +272,7 @@ async def cb_enter_stars_gift(callback: CallbackQuery, state: FSMContext) -> Non
     kb = await stars_gift_items_kb()
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            f"{get_pe('gift')} <b>گیفت‌های استارز تلگرام</b>\n\n"
+            f"{get_pe('heart_simple')} <b>گیفت‌های استارز تلگرام</b>\n\n"
             "یک گیفت را انتخاب کنید:\n"
             "<i>لینک هدیه پس از پرداخت برای شما ارسال می‌شود.</i>",
             reply_markup=kb,
@@ -349,7 +349,7 @@ async def cb_stars_gift_back(callback: CallbackQuery, state: FSMContext) -> None
     kb = await stars_gift_items_kb()
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            f"{get_pe('gift')} <b>گیفت‌های استارز تلگرام</b>\n\n"
+            f"{get_pe('heart_simple')} <b>گیفت‌های استارز تلگرام</b>\n\n"
             "یک گیفت را انتخاب کنید:\n"
             "<i>لینک هدیه پس از پرداخت برای شما ارسال می‌شود.</i>",
             reply_markup=kb,

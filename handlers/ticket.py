@@ -29,11 +29,12 @@ from aiogram.filters import StateFilter
 from aiogram.exceptions import TelegramBadRequest
 
 from config import config
-from states.states import TicketStates
+from states.states import TicketStates, AdminStates
 from database.db import (
     create_ticket,
     get_ticket,
     close_ticket,
+    get_open_ticket_by_user,
     get_or_create_user,
 )
 from keyboards.reply import main_reply_kb
@@ -128,7 +129,8 @@ async def msg_ticket_submit(message: Message, state: FSMContext) -> None:
         f"🆔 شناسه: <code>{message.from_user.id}</code>\n"
         f"📛 یوزرنیم: @{message.from_user.username or 'ندارد'}\n"
         f"{get_pe('calendar')} تاریخ: {ticket_id}\n\n"
-        f"💬 پیام:\n{text.strip()}"
+        f"💬 پیام:\n{text.strip()}\n\n"
+        f"💬 برای پاسخ، روی دستور کلیک کنید: /reply_{message.from_user.id}"
     )
 
     # 4) Forward to the support admin
@@ -225,6 +227,103 @@ async def msg_admin_send_reply(message: Message, state: FSMContext) -> None:
     await state.clear()
     await message.answer(
         f"{get_pe('check')} پاسخ تیکت #{ticket_id} با موفقیت ارسال شد و تیکت بسته شد."
+    )
+
+
+# ─── Admin quick-reply via /reply_<user_id> command ─────────────────
+
+# Matches /reply_123456789 (SlashCommand filters on the command name)
+@router.message(
+    F.text.regexp(r"^/reply_\d+$"),
+    StateFilter(None),
+)
+async def cmd_admin_reply_by_user(message: Message, state: FSMContext) -> None:
+    """Admin starts a quick reply for a specific user by user-id."""
+    if message.from_user.id not in config.ADMIN_IDS:
+        await message.answer("⛔ دسترسی غیرمجاز.")
+        return
+
+    target_id = int(message.text.strip().split("_", 1)[1])
+
+    ticket = await get_open_ticket_by_user(target_id)
+    reply_ticket_id = ticket["ticket_id"] if ticket else None
+
+    await state.set_state(AdminStates.waiting_for_ticket_reply)
+    await state.update_data(
+        reply_user_id=target_id,
+        reply_ticket_id=reply_ticket_id,
+    )
+
+    await message.answer(
+        f"{get_pe('call')} <b>در حال پاسخ به کاربر</b> <code>{target_id}</code>\n\n"
+        "✍️ لطفا پیام پاسخ خود را بنویسید (برای لغو /cancel را ارسال کنید):",
+    )
+
+
+# ─── Cancel quick-reply while waiting for the reply text ────────────
+
+@router.message(
+    F.text.casefold() == "/cancel",
+    AdminStates.waiting_for_ticket_reply,
+)
+async def cmd_cancel_ticket_reply(message: Message, state: FSMContext) -> None:
+    """Cancel the admin's in-progress reply."""
+    if message.from_user.id not in config.ADMIN_IDS:
+        return
+    await state.clear()
+    await message.answer("❌ پاسخ لغو شد.")
+
+
+# ─── Admin sends the reply text (command-based flow) ────────────────
+
+@router.message(AdminStates.waiting_for_ticket_reply)
+async def msg_admin_send_direct_reply(message: Message, state: FSMContext) -> None:
+    """Send the admin's quick reply back to the target user."""
+    if message.from_user.id not in config.ADMIN_IDS:
+        return
+
+    data = await state.get_data()
+    target_id = data.get("reply_user_id")
+    if not target_id:
+        await message.answer("⚠️ خطا: اطلاعات کاربر یافت نشد.")
+        await state.clear()
+        return
+
+    reply_text = message.text.strip()
+    if not reply_text:
+        await message.answer("⚠️ پیام نمی‌تواند خالی باشد.")
+        return
+
+    try:
+        await message.bot.send_message(
+            chat_id=target_id,
+            text=(
+                f"{get_pe('call')} <b>پاسخ پشتیبانی</b>\n\n"
+                f"{reply_text}\n\n"
+                "اگر سؤال دیگری دارید، مجدداً تیکت ارسال کنید."
+            ),
+            reply_markup=main_reply_kb(),
+        )
+    except Exception as exc:
+        logger.error("Failed to send admin reply to user %s: %s", target_id, exc)
+        await message.answer(
+            f"⚠️ ارسال پاسخ به کاربر <code>{target_id}</code> ناموفق بود.\n"
+            "ممکن است کاربر ربات را بلاک کرده باشد."
+        )
+        await state.clear()
+        return
+
+    ticket_id = data.get("reply_ticket_id")
+    if not ticket_id:
+        active_ticket = await get_open_ticket_by_user(target_id)
+        if active_ticket:
+            ticket_id = active_ticket["ticket_id"]
+    if ticket_id:
+        await close_ticket(ticket_id)
+
+    await state.clear()
+    await message.answer(
+        f"{get_pe('check')} پیام شما با موفقیت برای کاربر <code>{target_id}</code> ارسال شد."
     )
 
 

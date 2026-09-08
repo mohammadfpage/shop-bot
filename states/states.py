@@ -86,3 +86,4 @@ class AdminStates(StatesGroup):
     process_order_id = State()
     broadcast_message = State()     # waiting for broadcast text message
     broadcast_photo = State()       # waiting for broadcast photo
+    waiting_for_ticket_reply = State()  # admin is typing a support reply to a user

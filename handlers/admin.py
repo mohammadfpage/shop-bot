@@ -342,7 +342,7 @@ async def cb_admin_paid_orders(callback: CallbackQuery) -> None:
                 reply_markup=admin_back_kb(),
             )
     else:
-        lines = [f"{get_pe('star_gift')} <b>سفارشات پرداخت شده (نیاز به پردازش)</b>\n"]
+        lines = [f"{get_pe('check')} <b>سفارشات پرداخت شده (نیاز به پردازش)</b>\n"]
         for o in orders[:20]:
             lines.append(
                 f"#{o['order_id']} | {o['product']} | "
@@ -413,7 +413,7 @@ async def cb_admin_complete(callback: CallbackQuery) -> None:
             f"{get_pe('check')} <b>سفارش شما تکمیل شد!</b>\n\n"
             f"{get_pe('box')} شماره سفارش: #{order_id}\n"
             f"🛍 محصول: {order['product']}\n\n"
-            f"از خرید شما متشکریم! {get_pe('thumbsup')}"
+            f"از خرید شما متشکریم! {get_pe('check')}"
         )
     except Exception as exc:
         logger.warning("Could not notify user %s: %s", order["user_id"], exc)
@@ -595,9 +595,10 @@ async def cb_admin_tickets(callback: CallbackQuery) -> None:
             lines.append(
                 f"#{t['ticket_id']} | {get_pe('user')} {t['full_name']} | "
                 f"{get_pe('calendar')} {t['created_at'][:16] if t['created_at'] else '—'}\n"
-                f"   💬 {t['message'][:80]}{'…' if len(t['message']) > 80 else ''}"
+                f"   💬 {t['message'][:80]}{'…' if len(t['message']) > 80 else ''}\n"
+                f"   👉 پاسخ: /reply_{t['user_id']}"
             )
-        lines.append("\nبرای پاسخ به تیکت، از دکمه «📝 پاسخ» روی پیام فوروارد شده استفاده کنید.")
+        lines.append("\nبرای پاسخ، دستور پاسخ زیر هر تیکت را ارسال کنید.")
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text("\n".join(lines), reply_markup=admin_back_kb())
     await callback.answer()
@@ -813,7 +814,7 @@ async def cb_admin_deliver(callback: CallbackQuery) -> None:
                 f"{get_pe('check')} <b>سفارش شما تکمیل شد!</b>\n\n"
                 f"{get_pe('box')} شماره سفارش: #{order_id}\n"
                 f"🛍 محصول: {order['product']}\n\n"
-                f"از خرید شما متشکریم! {get_pe('thumbsup')}"
+                f"از خرید شما متشکریم! {get_pe('check')}"
             )
         except Exception as exc:
             logger.warning("Could not notify user %s: %s", order["user_id"], exc)

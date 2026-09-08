@@ -428,6 +428,16 @@ async def get_open_tickets() -> list[asyncpg.Record]:
     )
 
 
+async def get_open_ticket_by_user(user_id: int) -> Optional[asyncpg.Record]:
+    """Return the most recent open ticket for a user, or None."""
+    pool = await get_pool()
+    return await pool.fetchrow(
+        "SELECT * FROM tickets WHERE user_id = $1 AND status = 'open' "
+        "ORDER BY created_at DESC LIMIT 1",
+        user_id,
+    )
+
+
 # ─── Internal ────────────────────────────────────────────────────────
 
 def _now() -> str:

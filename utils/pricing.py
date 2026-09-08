@@ -100,9 +100,11 @@ def calculate_final_price(product_usd: float, exchange_rate: float) -> int:
     """Return the final price in Tomans (rounded to nearest 1000).
 
     Formula: (product_usd × exchange_rate) × (1 + PROFIT_MARGIN%)
+
+    The result is always a strict ``int`` — ZardinPal rejects floats.
     """
     raw = product_usd * exchange_rate * (1 + config.PROFIT_MARGIN_PERCENT / 100)
-    # Round to nearest 1000 Toman for cleaner pricing
+    # Round to nearest 1000 Toman for cleaner pricing, then force to int
     return int(round(raw / 1000) * 1000)
 
 

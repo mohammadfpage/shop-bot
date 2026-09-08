@@ -50,9 +50,9 @@ def welcome_inline_kb() -> InlineKeyboardMarkup:
 
 # Ordered list of (callback_data, label, emoji_key) for the menu rows
 _MENU_ROWS: list[tuple[str, str, str]] = [
-    ("menu:premium",     "تلگرام پرمیوم",   "star"),
-    ("menu:stars",       "خرید استارز",     "sparkles"),
-    ("menu:stars_gift",  "گیفت‌های استارز", "gift"),
+    ("menu:premium",     "تلگرام پرمیوم", "purse"),
+    ("menu:stars",       "خرید استارز",  "star"),
+    ("menu:stars_gift",  "گیفت‌های استارز", "heart_simple"),
     ("menu:ai_accounts", "اکانت هوش مصنوعی","bot"),
     ("menu:design",      "خدمات طراحی",     "gear"),
     ("menu:security",    "امنیت صفحه",      "shield"),
@@ -156,27 +156,25 @@ def stars_target_kb() -> InlineKeyboardMarkup:
 
 # ─── Telegram Stars Gifts (individual items, 2-column layout) ───────
 
-# Each gift: (emoji_key_for_icon, stars_count, product_key, stars_count_tag)
+# Each gift: (emoji_key_for_button_icon, stars_count, product_key, display_name)
+# Only include products that exist in config.PRICES / product_prices DB.
 _STARS_GIFTS = [
-    ("heart",  15,  "stars_gift_heart_15"),
-    ("bot",    50,  "stars_gift_bear_50"),
-    ("gift",   25,  "stars_gift_present_25"),
-    ("call",   25,  "stars_gift_phone_25"),
-    ("diamond",50,  "stars_gift_cake_50"),
-    ("sparkles",50, "stars_gift_flower_50"),
-    ("star_gift",50, "stars_gift_champagne_50"),
-    ("rocket", 50,  "stars_gift_rocket_50"),
-    ("star",   100, "stars_gift_ribbon_100"),
-    ("star",   100, "stars_gift_ring_100"),
+    ("heart_simple",  15,  "stars_gift_heart_15",  "💖 قلب"),
+    ("diamond",       50,  "stars_gift_bear_50",   "🧸 خرس"),
+    ("coin_new",      25,  "stars_gift_present_25","🎁 هدیه"),
+    ("call",          25,  "stars_gift_phone_25",  "📱 گوشی"),
+    ("diamond",       50,  "stars_gift_cake_50",   "🎂 کیک"),
+    ("sparkles",      50,  "stars_gift_flower_50", "🌷 گل"),
 ]
 # Special diamond gift (full-width button at bottom)
-_DIAMOND_GIFT = ("diamond", 100, "stars_gift_diamond_100")
+_DIAMOND_GIFT = ("diamond", 100, "stars_gift_diamond_100", "💎 الماس")
 
 
 async def stars_gift_items_kb() -> InlineKeyboardMarkup:
     """Build the Stars Gifts keyboard with dynamic DB prices.
 
     Each gift button takes full width (1 per row) to show full text.
+    Format: [Emoji] [Name] — [Price] تومان | ⭐️ [Stars]
     """
     from database.db import get_all_product_prices
     from utils.pricing import price_display
@@ -186,12 +184,12 @@ async def stars_gift_items_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
     # Build 1-column rows for the standard gifts (full width each)
-    for emoji_key, stars_count, pkey in _STARS_GIFTS:
+    for emoji_key, stars_count, pkey, display_name in _STARS_GIFTS:
         usd = price_map.get(pkey, 0.0)
         toman_str = await price_display(usd)
         toman_num = toman_str.replace(" تومان", "")
         builder.button(
-            text=f"{toman_num} تومان - ⭐️ {stars_count}",
+            text=f"{display_name} — {toman_num} تومان | ⭐️ {stars_count}",
             callback_data=f"stars_gift:item:{pkey}",
             style="primary",
             icon_custom_emoji_id=get_premium_id(emoji_key),
@@ -200,12 +198,12 @@ async def stars_gift_items_kb() -> InlineKeyboardMarkup:
     builder.adjust(1)  # 1 button per row to show full text
 
     # Diamond gift — full-width button
-    d_emoji_key, d_stars, d_pkey = _DIAMOND_GIFT
+    d_emoji_key, d_stars, d_pkey, d_name = _DIAMOND_GIFT
     d_usd = price_map.get(d_pkey, 0.0)
     d_toman_str = await price_display(d_usd)
     d_toman_num = d_toman_str.replace(" تومان", "")
     builder.row(InlineKeyboardButton(
-        text=f"گیفت الماس ({d_toman_num} تومان) - ⭐️ {d_stars}",
+        text=f"{d_name} — {d_toman_num} تومان | ⭐️ {d_stars}",
         callback_data=f"stars_gift:item:{d_pkey}",
         style="primary",
         icon_custom_emoji_id=get_premium_id(d_emoji_key),
@@ -271,9 +269,9 @@ async def design_category_kb() -> InlineKeyboardMarkup:
 
     # Get cheapest price per category for display
     categories = [
-        ("design:cat:video", "ویدیو", "design_video_ai", "down"),
-        ("design:cat:photo", "عکس", "design_photo_ai", "call"),
-        ("design:cat:logo",  "لوگو", "design_logo_ai", "star"),
+        ("design:cat:video", "🎬 ویدیو", "design_video_ai", "film"),
+        ("design:cat:photo", "📸 عکس",  "design_photo_ai", "camera"),
+        ("design:cat:logo",  "🎨 لوگو",  "design_logo_ai", "palette"),
     ]
 
     builder = InlineKeyboardBuilder()

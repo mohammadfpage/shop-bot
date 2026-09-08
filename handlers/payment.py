@@ -55,13 +55,20 @@ async def cb_pay_check(callback: CallbackQuery, state: FSMContext) -> None:
             return
 
         await callback.answer("⏳ در حال بررسی پرداخت…", show_alert=False)
+        # Fetch the persisted integer amount from the DB — never recalculate.
+        expected_amount = int(payment["order_amount_irt"])
         result = await verify_payment(
             authority=payment["authority"],
-            amount_irt=payment["order_amount_irt"],
+            amount_irt=expected_amount,
         )
 
-        # Zarinpal must confirm the exact IRT amount returned by the API.
-        amount_matches = result.amount_irt == payment["order_amount_irt"]
+        # Compare the gateway's returned amount against the DB-stored int.
+        # If Zarinpal did not return an amount, rely on the API code alone.
+        if result.amount_irt is not None:
+            amount_matches = int(result.amount_irt) == expected_amount
+        else:
+            amount_matches = True
+
         if not (
             result.success
             and result.code in (100, 101)

@@ -34,7 +34,12 @@ class PaymentVerifyResult:
 
 
 def _as_int(value: Any) -> Optional[int]:
-    """Convert an integral API value to int without rounding it."""
+    """Convert a numeric API value to ``int``.
+
+    Accepts int, float, and numeric strings such as ``"28500000"``
+    or ``"28500000.0"``.  Returns ``None`` only when the value is
+    truly non-numeric or represents a non-integer fraction.
+    """
     if value is None or isinstance(value, bool):
         return None
     try:
