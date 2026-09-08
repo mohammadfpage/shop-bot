@@ -40,21 +40,20 @@ class Config:
     # ─── Webhook Server ────────────────────────────────────────────────
     WEBHOOK_HOST: str = os.getenv("WEBHOOK_HOST", "0.0.0.0")
     WEBHOOK_PORT: int = int(os.getenv("WEBHOOK_PORT", "8443"))
-    # WEBHOOK_BASE_URL: str = os.getenv("WEBHOOK_BASE_URL", "https://sharp-wolves-deny.loca.lt")
-    WEBHOOK_BASE_URL: str = os.getenv("WEBHOOK_BASE_URL", "https://pixel-shop.duckdns.org")
+    WEBHOOK_BASE_URL: str = os.getenv("WEBHOOK_BASE_URL", "https://hamrahsocial.ir")
     WEBHOOK_SECRET: str = os.getenv("WEBHOOK_SECRET", "")
 
     # ─── Database (PostgreSQL via Neon) ──────────────────────────────────
-    DATABASE_URL: str = os.getenv(
-        "DATABASE_URL",
-        "postgresql://neondb_owner:npg_Nv5Sxsnfe4Mt@ep-wispy-wind-a51dz5fb-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require",
-    )
-
-    # # Databse (local vps) 
     # DATABASE_URL: str = os.getenv(
-    # "DATABASE_URL",
-    # "postgresql://bot_user:PixelBot%402026@127.0.0.1:5432/shopbot_db",
-    # ) 
+    #     "DATABASE_URL",
+    #     "postgresql://neondb_owner:npg_Nv5Sxsnfe4Mt@ep-wispy-wind-a51dz5fb-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require",
+    # )
+
+    # Databse (local vps) 
+    DATABASE_URL: str = os.getenv(
+    "DATABASE_URL",
+    "postgresql://bot_user:PixelBot%402026@127.0.0.1:5432/shopbot_db",
+    ) 
 
     # ─── BrsApi Exchange Rate API ──────────────────────────────────────
     BRS_API_URL: str = "https://Api.BrsApi.ir/Market/Gold_Currency.php?key=BuW46kKxyFYAWKTQchxx7ajGzv3ryR8x"

@@ -22,7 +22,7 @@ Environment variables:
     DATABASE_URL       — PostgreSQL connection string (Neon.tech)
     WEBHOOK_HOST       — bind address (default 0.0.0.0)
     WEBHOOK_PORT       — bind port    (default 8443)
-    WEBHOOK_BASE_URL   — public URL   (default https://pixel-shop.duckdns.org)
+    WEBHOOK_BASE_URL   — public URL   (default https://hamrahsocial.ir)
 """
 
 import asyncio
@@ -139,6 +139,50 @@ def register_routers(dispatcher: Dispatcher) -> None:
 WEBHOOK_PATH = "/webhook"
 
 
+# ─── Webhook registration helper ────────────────────────────────────
+
+async def set_webhook_with_retry(
+    bot: Bot,
+    attempts: int = 5,
+) -> None:
+    """Register the Telegram webhook at ``WEBHOOK_BASE_URL`` + ``WEBHOOK_PATH``.
+
+    Runs on every application startup. Retries transient network errors with
+    exponential backoff and confirms registration via ``getWebhookInfo`` so
+    the service never silently comes up with a missing/mismatched webhook.
+    """
+    url = f"{config.WEBHOOK_BASE_URL}{WEBHOOK_PATH}"
+    secret = config.WEBHOOK_SECRET or None
+    last_exc: Exception | None = None
+
+    for attempt in range(1, attempts + 1):
+        try:
+            await bot.set_webhook(
+                url=url,
+                drop_pending_updates=False,  # keep updates that queued during downtime
+                secret_token=secret,
+            )
+            info = await bot.get_webhook_info()
+            if info.url != url:
+                raise RuntimeError(
+                    f"Telegram reports webhook {info.url!r}, expected {url!r}."
+                )
+            logger.info("Webhook set to: %s", url)
+            return
+        except Exception as exc:
+            last_exc = exc
+            logger.error(
+                "Failed to set webhook %s (attempt %d/%d): %s",
+                url, attempt, attempts, exc,
+            )
+            if attempt < attempts:
+                await asyncio.sleep(2**attempt)
+
+    raise RuntimeError(
+        f"Could not set webhook {url} after {attempts} attempts. Last error: {last_exc}"
+    )
+
+
 # ─── FastAPI lifespan (webhook mode) ────────────────────────────────
 
 @asynccontextmanager
@@ -150,12 +194,19 @@ async def lifespan(app: FastAPI):
     """
     global bot, dp
 
-    # ── 1. Database ──────────────────────────────────────────────────
-    logger.info("Initializing database (PostgreSQL) …")
-    await init_db()
-    logger.info("Database ready.")
+    # ── 1. aiogram Bot ───────────────────────────────────────────────
+    bot = Bot(
+        token=config.BOT_TOKEN,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
 
-    # ── 2. Background rate-fetcher ───────────────────────────────────
+    # ── 2. Register the webhook on Telegram ──────────────────────────
+    # Done immediately after creating the bot, before DB/routers, so the
+    # webhook is always (re)registered on every start — no more manual
+    # curl after systemd restarts.
+    await set_webhook_with_retry(bot)
+
+    # ── 3. Background rate-fetcher ───────────────────────────────────
     from utils.cache import rate_cache
     rate_fetcher_task = asyncio.create_task(rate_cache.start(interval=300))
     logger.info(
@@ -163,11 +214,7 @@ async def lifespan(app: FastAPI):
         rate_fetcher_task.get_name(),
     )
 
-    # ── 3. aiogram Bot + Dispatcher ──────────────────────────────────
-    bot = Bot(
-        token=config.BOT_TOKEN,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
-    )
+    # ── 4. Dispatcher + routers ──────────────────────────────────────
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
 
@@ -178,22 +225,18 @@ async def lifespan(app: FastAPI):
     dp.errors.register(global_error_handler)
     register_routers(dp)
 
-    # ── 4. Set the webhook on Telegram ──────────────────────────────
-    webhook_url = f"{config.WEBHOOK_BASE_URL}{WEBHOOK_PATH}"
-    await bot.set_webhook(
-        url=webhook_url,
-        drop_pending_updates=True,
-        secret_token=config.WEBHOOK_SECRET or None,
-    )
-    logger.info("Webhook set to: %s", webhook_url)
+    # ── 5. Database ──────────────────────────────────────────────────
+    logger.info("Initializing database (PostgreSQL) …")
+    await init_db()
+    logger.info("Database ready.")
 
     yield  # ── FastAPI is now live, webhook is active ────────────────
 
     # ── Shutdown ─────────────────────────────────────────────────────
     logger.info("Shutting down …")
 
-    # Delete the webhook
-    await bot.delete_webhook(drop_pending_updates=True)
+    # Delete the webhook (keep pending updates queued for the next start)
+    await bot.delete_webhook(drop_pending_updates=False)
     logger.info("Webhook deleted.")
 
     # Cancel background tasks
