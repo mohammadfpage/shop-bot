@@ -146,12 +146,12 @@ async def reply_btn_profile(message: Message) -> None:
     )
 
     username_display = f"@{user['username']}" if user["username"] else "—"
-    admin_badg = " | 🛡 مدیر" if user["is_admin"] else ""
+    admin_badg = f" | {get_pe('shield')} مدیر" if user["is_admin"] else ""
 
     text = (
         f"{get_pe('user')} <b>پروفایل من</b>\n\n"
-        f"🆔 شناسه: <code>{user['user_id']}</code>\n"
-        f"📛 نام: {user['full_name']}\n"
+        f"{get_pe('id_icon')} شناسه: <code>{user['user_id']}</code>\n"
+        f"{get_pe('name_badge')} نام: {user['full_name']}\n"
         f"{get_pe('user')} یوزرنیم: {username_display}{admin_badg}\n"
         f"{get_pe('calendar')} تاریخ عضویت: {user['joined_at'][:10] if user['joined_at'] else '—'}"
     )
@@ -270,7 +270,7 @@ async def cb_market_rates(callback: CallbackQuery) -> None:
     if not data:
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(
-                "⚠️ دریافت اطلاعات بازار با مشکل مواجه شد.\nلطفاً دوباره تلاش کنید.",
+                f"{get_pe('warning')} دریافت اطلاعات بازار با مشکل مواجه شد.\nلطفاً دوباره تلاش کنید.",
                 reply_markup=market_rates_refresh_kb(),
             )
         await callback.answer()
@@ -313,37 +313,37 @@ async def cb_market_rates(callback: CallbackQuery) -> None:
     ) -> str:
         item = items.get(symbol)
         if not item:
-            return f"  {name}: ⚠️ موجود نیست"
+            return f"  {name}: {get_pe('warning')} موجود نیست"
 
         price = item.get("price")
         change = as_number(item.get("change_percent"))
-        change_icon = "📈" if change >= 0 else "📉"
+        change_icon = get_pe("arrow_up") if change >= 0 else get_pe("arrow_down")
         return (
             f"  {name}: <b>{format_number(price)}</b> {unit} "
             f"{change_icon} {change:+.2f}%"
         )
 
     # ── Popular Currencies (prices are in Toman) ──
-    lines.append("🔸 <b>ارزهای پرکاربرد:</b>")
-    lines.append(format_item(currency, "USD", "🇺🇸 دلار آمریکا", "تومان"))
-    lines.append(format_item(currency, "EUR", "🇪🇺 یورو", "تومان"))
-    lines.append(format_item(currency, "USDT_IRT", "💰 تتر", "تومان"))
+    lines.append(f"{get_pe('money')} <b>ارزهای پرکاربرد:</b>")
+    lines.append(format_item(currency, "USD", f"{get_pe('flag_us')} دلار آمریکا", "تومان"))
+    lines.append(format_item(currency, "EUR", f"{get_pe('flag_eu')} یورو", "تومان"))
+    lines.append(format_item(currency, "USDT_IRT", f"{get_pe('coin_new')} تتر", "تومان"))
     lines.append("")
 
     # ── Gold & Coins (prices are in Toman) ──
-    lines.append("🔸 <b>طلا و سکه:</b>")
-    lines.append(format_item(gold, "IR_GOLD_18K", "🥇 طلای ۱۸ عیار", "تومان"))
-    lines.append(format_item(gold, "IR_COIN_EMAMI", "🪙 سکه امامی", "تومان"))
-    lines.append(format_item(gold, "IR_COIN_BAHAR", "🪙 سکه بهار آزادی", "تومان"))
+    lines.append(f"{get_pe('coin_new')} <b>طلا و سکه:</b>")
+    lines.append(format_item(gold, "IR_GOLD_18K", f"{get_pe('medal_gold')} طلای ۱۸ عیار", "تومان"))
+    lines.append(format_item(gold, "IR_COIN_EMAMI", f"{get_pe('coin_new')} سکه امامی", "تومان"))
+    lines.append(format_item(gold, "IR_COIN_BAHAR", f"{get_pe('coin_new')} سکه بهار آزادی", "تومان"))
     lines.append("")
 
     # ── Cryptocurrencies (prices are in USD) ──
-    lines.append("🔸 <b>رمزارزهای اصلی:</b>")
-    lines.append(format_item(cryptocurrency, "BTC", "₿ بیت‌کوین", "USD"))
-    lines.append(format_item(cryptocurrency, "ETH", "⟠ اتریوم", "USD"))
-    lines.append(format_item(cryptocurrency, "SOL", "◎ سولانا", "USD"))
+    lines.append(f"{get_pe('diamond')} <b>رمزارزهای اصلی:</b>")
+    lines.append(format_item(cryptocurrency, "BTC", f"{get_pe('coin')} بیت‌کوین", "USD"))
+    lines.append(format_item(cryptocurrency, "ETH", f"{get_pe('diamond')} اتریوم", "USD"))
+    lines.append(format_item(cryptocurrency, "SOL", f"{get_pe('sparkles')} سولانا", "USD"))
     lines.append("")
-    lines.append("⏰ نرخ‌ها لحظه‌ای هستند و هر ۵ دقیقه به‌روز می‌شوند.")
+    lines.append(f"{get_pe('clock')} نرخ‌ها لحظه‌ای هستند و هر ۵ دقیقه به‌روز می‌شوند.")
 
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
@@ -381,12 +381,12 @@ async def cb_my_orders(callback: CallbackQuery) -> None:
 def _format_order_line(o) -> str:
     """Format a single order line with detailed status."""
     status_map = {
-        "pending":   ("🟡", "در انتظار پرداخت"),
-        "paid":      ("🟢", "پرداخت شده / در صف انجام"),
-        "delivered": ("✅", "انجام شده"),
-        "cancelled": ("❌", "لغو شده"),
+        "pending":   (get_pe("yellow_circle"), "در انتظار پرداخت"),
+        "paid":      (get_pe("green_circle"), "پرداخت شده / در صف انجام"),
+        "delivered": (get_pe("check"), "انجام شده"),
+        "cancelled": (get_pe("cross"), "لغو شده"),
     }
-    emoji, label = status_map.get(o["status"], ("❓", o["status"]))
+    emoji, label = status_map.get(o["status"], (get_pe("question"), o["status"]))
     amount = f"{o['amount_irt']:,}".replace(",", "،") if o["amount_irt"] else "—"
     return f"{emoji} #{o['order_id']} | {o['product']} | {amount} تومان | {label}"
 

@@ -104,6 +104,25 @@ PREMIUM_EMOJIS: dict[str, tuple[str, str]] = {
     "lightning":        ("⚡", None),  # Broken ID - use fallback
     "thumbsup":         ("👍", None),  # Broken ID - use fallback
 
+    # ── Common UI emojis (fallback-only, ready for future premium IDs) ──
+    "warning":          ("⚠️", None),
+    "flag_eu":          ("🇪🇺", None),
+    "refresh":          ("🔄", None),
+    "clock":            ("⏰", None),
+    "note":             ("📝", None),
+    "tag":              ("🏷", None),
+    "idea":             ("💡", None),
+    "pointing":         ("👉", None),
+    "shopping":         ("🛍", None),
+    "id_icon":          ("🆔", None),
+    "name_badge":       ("📛", None),
+    "email_icon":       ("📧", None),
+    "key_icon":         ("🔑", None),
+    "writing":          ("✍️", None),
+    "forbidden":        ("⛔", None),
+    "comment":          ("💬", None),
+    "search":           ("🔍", None),
+
     # ── Backward-compatible aliases ─────────────────────────────────
     # Old key → maps to the same emoji-id as the numbered variant.
     # This keeps all existing get_pe("bot"), get_pe("call"), etc. working.

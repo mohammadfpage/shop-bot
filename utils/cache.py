@@ -45,6 +45,7 @@ from typing import Any, Optional
 import aiohttp
 
 from config import config
+from utils.emojis import get_pe
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +151,7 @@ class RateCache:
             return
 
         text = (
-            "⚠️ <b>هشدار سیستم نرخ ارز</b>\n\n"
+            f"{get_pe('warning')} <b>هشدار سیستم نرخ ارز</b>\n\n"
             "دریافت نرخ ارز از سرویس BrsApi با خطا مواجه شد:\n"
             f"<code>{reason}</code>\n\n"
             "ربات از آخرین نرخ ذخیره‌شده استفاده می‌کند و هر ۵ دقیقه "

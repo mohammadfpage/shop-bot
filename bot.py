@@ -40,6 +40,7 @@ from aiogram.types import Update, ErrorEvent
 
 from config import config
 from database.db import init_db, close_pool
+from utils.emojis import get_pe
 
 # ─── Logging ─────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -93,7 +94,7 @@ async def global_error_handler(event: ErrorEvent) -> None:
             await bot_instance.send_message(
                 chat_id=user_id,
                 text=(
-                    "❌ متاسفانه در پردازش درخواست شما مشکلی رخ داد.\n"
+                    f"{get_pe('cross')} متاسفانه در پردازش درخواست شما مشکلی رخ داد.\n"
                     "لطفاً لحظاتی بعد مجدداً تلاش کنید یا با پشتیبانی تماس بگیرید."
                 ),
             )

@@ -64,7 +64,7 @@ async def cb_ai_platform(callback: CallbackQuery, state: FSMContext) -> None:
     if not result.success or not result.authority:
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(
-                f"❌ درخواست پرداخت ناموفق بود:\n{result.message}",
+                f"{get_pe('cross')} درخواست پرداخت ناموفق بود:\n{result.message}",
                 reply_markup=back_to_menu_kb(),
             )
         await state.clear()

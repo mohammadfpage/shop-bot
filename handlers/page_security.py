@@ -63,7 +63,7 @@ async def cb_security_tariff(callback: CallbackQuery, state: FSMContext) -> None
 async def msg_page_url(message: Message, state: FSMContext) -> None:
     url = message.text.strip()
     if not url.startswith(("http://", "https://")):
-        await message.answer("⚠️ لطفاً یک آدرس URL معتبر ارسال کنید (شروع با http:// یا https://).")
+        await message.answer(f"{get_pe('warning')} لطفاً یک آدرس URL معتبر ارسال کنید (شروع با http:// یا https://).")
         return
 
     await state.update_data(page_url=url)
@@ -153,7 +153,7 @@ async def cb_security_confirm(callback: CallbackQuery, state: FSMContext) -> Non
     admin_msg = (
         f"{get_pe('shield')} <b>درخواست امنیتی جدید</b>\n\n"
         f"{get_pe('user')} کاربر: {callback.from_user.full_name} (@{callback.from_user.username or 'N/A'})\n"
-        f"🆔 شناسه: <code>{callback.from_user.id}</code>\n\n"
+        f"{get_pe('id_icon')} شناسه: <code>{callback.from_user.id}</code>\n\n"
         f"تعرفه: <b>{tariff_name}</b>\n"
         f"توضیحات: {tariff_desc}\n"
         f"صفحه: <code>{page_url}</code>\n"

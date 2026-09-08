@@ -81,7 +81,7 @@ async def msg_stars_quantity(message: Message, state: FSMContext) -> None:
     text = message.text.strip()
     if not text.isdigit() or int(text) < MIN_STARS:
         await message.answer(
-            f"⚠️ لطفاً عددی بزرگتر یا مساوی {MIN_STARS} ارسال کنید.",
+            f"{get_pe('warning')} لطفاً عددی بزرگتر یا مساوی {MIN_STARS} ارسال کنید.",
             reply_markup=back_to_menu_kb(),
         )
         return
@@ -127,7 +127,7 @@ async def cb_stars_target(callback: CallbackQuery, state: FSMContext) -> None:
 async def msg_stars_other_id(message: Message, state: FSMContext) -> None:
     text = message.text.strip()
     if not text.isdigit():
-        await message.answer("⚠️ لطفاً یک شناسه عددی معتبر ارسال کنید.", reply_markup=back_to_menu_kb())
+        await message.answer(f"{get_pe('warning')} لطفاً یک شناسه عددی معتبر ارسال کنید.", reply_markup=back_to_menu_kb())
         return
 
     target_id = int(text)
@@ -160,7 +160,7 @@ async def _stars_payment(callback: CallbackQuery, state: FSMContext) -> None:
     if not result.success or not result.authority:
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(
-                f"❌ درخواست پرداخت ناموفق بود:\n{result.message}",
+                f"{get_pe('cross')} درخواست پرداخت ناموفق بود:\n{result.message}",
                 reply_markup=back_to_menu_kb(),
             )
         await state.clear()
@@ -207,7 +207,7 @@ async def _stars_payment_msg(message: Message, state: FSMContext) -> None:
 
     if not result.success or not result.authority:
         await message.answer(
-            f"❌ درخواست پرداخت ناموفق بود:\n{result.message}",
+            f"{get_pe('cross')} درخواست پرداخت ناموفق بود:\n{result.message}",
             reply_markup=back_to_menu_kb(),
         )
         await state.clear()
@@ -236,31 +236,29 @@ async def _stars_payment_msg(message: Message, state: FSMContext) -> None:
 # Mapping from product_key to stars count (for order details)
 _GIFT_STARS_MAP: dict[str, int] = {
     "stars_gift_heart_15": 15,
-    "stars_gift_bear_50": 50,
-    "stars_gift_present_25": 25,
-    "stars_gift_phone_25": 25,
+    "stars_gift_star_25": 25,
+    "stars_gift_duck_25": 25,
+    "stars_gift_robot_50": 50,
+    "stars_gift_diamond_50": 50,
     "stars_gift_cake_50": 50,
-    "stars_gift_flower_50": 50,
-    "stars_gift_champagne_50": 50,
-    "stars_gift_rocket_50": 50,
-    "stars_gift_ribbon_100": 100,
-    "stars_gift_ring_100": 100,
-    "stars_gift_diamond_100": 100,
+    "stars_gift_bear_100": 100,
+    "stars_gift_fire_100": 100,
+    "stars_gift_crown_250": 250,
+    "stars_gift_unicorn_500": 500,
 }
 
 # Mapping from product_key to emoji (for order details)
 _GIFT_EMOJI_MAP: dict[str, str] = {
-    "stars_gift_heart_15": "💖",
-    "stars_gift_bear_50": "🧸",
-    "stars_gift_present_25": "🎁",
-    "stars_gift_phone_25": "📱",
+    "stars_gift_heart_15": "🤍",
+    "stars_gift_star_25": "⭐️",
+    "stars_gift_duck_25": "🦆",
+    "stars_gift_robot_50": "🤖",
+    "stars_gift_diamond_50": "💎",
     "stars_gift_cake_50": "🎂",
-    "stars_gift_flower_50": "🌷",
-    "stars_gift_champagne_50": "🍾",
-    "stars_gift_rocket_50": "🚀",
-    "stars_gift_ribbon_100": "💝",
-    "stars_gift_ring_100": "💍",
-    "stars_gift_diamond_100": "💎",
+    "stars_gift_bear_100": "🧸",
+    "stars_gift_fire_100": "🔥",
+    "stars_gift_crown_250": "👑",
+    "stars_gift_unicorn_500": "🦄",
 }
 
 
@@ -311,7 +309,7 @@ async def cb_stars_gift_item(callback: CallbackQuery, state: FSMContext) -> None
     if not result.success or not result.authority:
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(
-                f"❌ درخواست پرداخت ناموفق بود:\n{result.message}",
+                f"{get_pe('cross')} درخواست پرداخت ناموفق بود:\n{result.message}",
                 reply_markup=back_to_menu_kb(),
             )
         await state.clear()

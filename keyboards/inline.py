@@ -157,24 +157,28 @@ def stars_target_kb() -> InlineKeyboardMarkup:
 # ─── Telegram Stars Gifts (individual items, 2-column layout) ───────
 
 # Each gift: (emoji_key_for_button_icon, stars_count, product_key, display_name)
+# display_name uses plain unicode emojis — Telegram does NOT render custom
+# <tg-emoji> tags inside buttons.
 # Only include products that exist in config.PRICES / product_prices DB.
 _STARS_GIFTS = [
-    ("heart_simple",  15,  "stars_gift_heart_15",  "💖 قلب"),
-    ("diamond",       50,  "stars_gift_bear_50",   "🧸 خرس"),
-    ("coin_new",      25,  "stars_gift_present_25","🎁 هدیه"),
-    ("call",          25,  "stars_gift_phone_25",  "📱 گوشی"),
-    ("diamond",       50,  "stars_gift_cake_50",   "🎂 کیک"),
-    ("sparkles",      50,  "stars_gift_flower_50", "🌷 گل"),
+    ("heart_simple", 15,  "stars_gift_heart_15",   "🤍 قلب"),
+    ("star",         25,  "stars_gift_star_25",    "⭐️ ستاره"),
+    ("sparkles",     25,  "stars_gift_duck_25",    "🦆 اردک"),
+    ("bot",          50,  "stars_gift_robot_50",   "🤖 ربات"),
+    ("diamond",      50,  "stars_gift_diamond_50", "💎 الماس"),
+    ("sparkles",     50,  "stars_gift_cake_50",    "🎂 کیک"),
+    ("star",         100, "stars_gift_bear_100",   "🧸 خرس"),
+    ("fire",         100, "stars_gift_fire_100",   "🔥 آتش"),
+    ("diamond",      250, "stars_gift_crown_250",  "👑 تاج"),
+    ("sparkles",     500, "stars_gift_unicorn_500","🦄 یونیکورن"),
 ]
-# Special diamond gift (full-width button at bottom)
-_DIAMOND_GIFT = ("diamond", 100, "stars_gift_diamond_100", "💎 الماس")
 
 
 async def stars_gift_items_kb() -> InlineKeyboardMarkup:
     """Build the Stars Gifts keyboard with dynamic DB prices.
 
     Each gift button takes full width (1 per row) to show full text.
-    Format: [Emoji] [Name] — [Price] تومان | ⭐️ [Stars]
+    Format: [Emoji] [Name] [Stars] ⭐️ - [Price] تومان
     """
     from database.db import get_all_product_prices
     from utils.pricing import price_display
@@ -183,31 +187,19 @@ async def stars_gift_items_kb() -> InlineKeyboardMarkup:
     price_map = {row["product_key"]: float(row["usd_price"]) for row in price_rows}
     builder = InlineKeyboardBuilder()
 
-    # Build 1-column rows for the standard gifts (full width each)
+    # Build 1-column rows for all official gifts (full width each)
     for emoji_key, stars_count, pkey, display_name in _STARS_GIFTS:
         usd = price_map.get(pkey, 0.0)
         toman_str = await price_display(usd)
         toman_num = toman_str.replace(" تومان", "")
         builder.button(
-            text=f"{display_name} — {toman_num} تومان | ⭐️ {stars_count}",
+            text=f"{display_name} {stars_count} ⭐️ - {toman_num} تومان",
             callback_data=f"stars_gift:item:{pkey}",
             style="primary",
             icon_custom_emoji_id=get_premium_id(emoji_key),
         )
 
     builder.adjust(1)  # 1 button per row to show full text
-
-    # Diamond gift — full-width button
-    d_emoji_key, d_stars, d_pkey, d_name = _DIAMOND_GIFT
-    d_usd = price_map.get(d_pkey, 0.0)
-    d_toman_str = await price_display(d_usd)
-    d_toman_num = d_toman_str.replace(" تومان", "")
-    builder.row(InlineKeyboardButton(
-        text=f"{d_name} — {d_toman_num} تومان | ⭐️ {d_stars}",
-        callback_data=f"stars_gift:item:{d_pkey}",
-        style="primary",
-        icon_custom_emoji_id=get_premium_id(d_emoji_key),
-    ))
 
     # Back button
     builder.row(InlineKeyboardButton(

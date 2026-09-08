@@ -103,18 +103,17 @@ class Config:
         "design_logo_pro": 49.99,
         "design_logo_special": 99.99,
 
-        # Stars Gifts (individual items)
+        # Stars Gifts (individual items — official Telegram Star Gifts)
         "stars_gift_heart_15": 0.49,
-        "stars_gift_bear_50": 1.49,
-        "stars_gift_present_25": 0.99,
-        "stars_gift_phone_25": 0.99,
+        "stars_gift_star_25": 0.99,
+        "stars_gift_duck_25": 0.99,
+        "stars_gift_robot_50": 1.49,
+        "stars_gift_diamond_50": 1.49,
         "stars_gift_cake_50": 1.49,
-        "stars_gift_flower_50": 1.49,
-        "stars_gift_champagne_50": 1.49,
-        "stars_gift_rocket_50": 1.49,
-        "stars_gift_ribbon_100": 2.99,
-        "stars_gift_ring_100": 2.99,
-        "stars_gift_diamond_100": 3.99,
+        "stars_gift_bear_100": 2.99,
+        "stars_gift_fire_100": 2.99,
+        "stars_gift_crown_250": 4.99,
+        "stars_gift_unicorn_500": 9.99,
     })
 
     # ─── Human-readable product labels (Persian) ────────────────────────
@@ -147,18 +146,17 @@ class Config:
         "design_logo_simple": "لوگو — ساده",
         "design_logo_pro": "لوگو — حرفه‌ای",
         "design_logo_special": "لوگو — ویژه",
-        # Stars Gifts (individual)
-        "stars_gift_heart_15": "گیفت قلب ❤️ ۱۵ استارز",
-        "stars_gift_bear_50": "گیفت خرس 🧸 ۵۰ استارز",
-        "stars_gift_present_25": "گیفت هدیه 🎁 ۲۵ استارز",
-        "stars_gift_phone_25": "گیفت گوشی 📱 ۲۵ استارز",
+        # Stars Gifts (individual — official Telegram Star Gifts)
+        "stars_gift_heart_15": "گیفت قلب 🤍 ۱۵ استارز",
+        "stars_gift_star_25": "گیفت ستاره ⭐️ ۲۵ استارز",
+        "stars_gift_duck_25": "گیفت اردک 🦆 ۲۵ استارز",
+        "stars_gift_robot_50": "گیفت ربات 🤖 ۵۰ استارز",
+        "stars_gift_diamond_50": "گیفت الماس 💎 ۵۰ استارز",
         "stars_gift_cake_50": "گیفت کیک 🎂 ۵۰ استارز",
-        "stars_gift_flower_50": "گیفت گل 🌷 ۵۰ استارز",
-        "stars_gift_champagne_50": "گیفت شامپاین 🍾 ۵۰ استارز",
-        "stars_gift_rocket_50": "گیفت موشک 🚀 ۵۰ استارز",
-        "stars_gift_ribbon_100": "گیفت روبان 💝 ۱۰۰ استارز",
-        "stars_gift_ring_100": "گیفت انگشتر 💍 ۱۰۰ استارز",
-        "stars_gift_diamond_100": "گیفت الماس 💎 ۱۰۰ استارز",
+        "stars_gift_bear_100": "گیفت خرس 🧸 ۱۰۰ استارز",
+        "stars_gift_fire_100": "گیفت آتش 🔥 ۱۰۰ استارز",
+        "stars_gift_crown_250": "گیفت تاج 👑 ۲۵۰ استارز",
+        "stars_gift_unicorn_500": "گیفت یونیکورن 🦄 ۵۰۰ استارز",
     })
 
     # ─── Service Tariffs (page security) ───────────────────────────────

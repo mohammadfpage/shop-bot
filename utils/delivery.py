@@ -49,7 +49,7 @@ async def deliver_product(
         await _safe_send(
             bot,
             user_id,
-            "⚠️ خطایی در تحویل خودکار رخ داد.\n"
+            f"{get_pe('warning')} خطایی در تحویل خودکار رخ داد.\n"
             "مدیر ما به زودی سفارش شما را پردازش خواهد کرد.",
         )
 
@@ -67,9 +67,9 @@ async def _deliver_ai_account(bot: Bot, user_id: int, order_id: int, product: st
             user_id,
             f"{get_pe('sparkles')} <b>پرداخت موفق!</b>\n\n"
             f"{get_pe('bot')} <b>اطلاعات ورود {product}:</b>\n\n"
-            f"📧 ایمیل: <code>{acc['email']}</code>\n"
-            f"🔑 رمز عبور: <code>{acc['password']}</code>\n\n"
-            "⚠️ لطفاً پس از ورود رمز عبور را تغییر دهید.\n"
+            f"{get_pe('email_icon')} ایمیل: <code>{acc['email']}</code>\n"
+            f"{get_pe('key_icon')} رمز عبور: <code>{acc['password']}</code>\n\n"
+            f"{get_pe('warning')} لطفاً پس از ورود رمز عبور را تغییر دهید.\n"
             "برای پشتیبانی با @admin تماس بگیرید.",
         )
     else:
@@ -77,7 +77,7 @@ async def _deliver_ai_account(bot: Bot, user_id: int, order_id: int, product: st
             bot,
             user_id,
             f"{get_pe('check')} پرداخت موفق!\n\n"
-            f"⚠️ در حال حاضر اطلاعات ورود موجود نیست. "
+            f"{get_pe('warning')} در حال حاضر اطلاعات ورود موجود نیست. "
             f"مدیر ما {product} شما را به زودی تحویل خواهد داد.",
         )
 
@@ -99,7 +99,7 @@ async def _deliver_design(
         admin_msg = (
             f"{get_pe('fire')} <b>سفارش طراحی جدید #{order['order_id']}</b>\n\n"
             f"{get_pe('user')} کاربر: <code>{order['user_id']}</code>\n"
-            f"📝 جزئیات:\n{order['details']}\n\n"
+            f"{get_pe('note')} جزئیات:\n{order['details']}\n\n"
             f"{get_pe('money')} مبلغ: {order['amount_irt']:,} تومان\n"
             "لطفاً این سفارش را پردازش کنید."
         )

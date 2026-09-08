@@ -69,7 +69,7 @@ async def cb_ticket_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            "🏠 <b>منوی اصلی</b>\nیک سرویس را انتخاب کنید:",
+            f"{get_pe('home')} <b>منوی اصلی</b>\nیک سرویس را انتخاب کنید:",
             reply_markup=back_to_menu_kb(),
         )
     await callback.answer()
@@ -82,7 +82,7 @@ async def msg_ticket_submit(message: Message, state: FSMContext) -> None:
     """Save the ticket to DB and forward to the support admin."""
     text = message.text
     if not text or len(text.strip()) < 3:
-        await message.answer("⚠️ لطفاً حداقل ۳ کاراکتر بنویسید.")
+        await message.answer(f"{get_pe('warning')} لطفاً حداقل ۳ کاراکتر بنویسید.")
         return
 
     # 1) Save ticket in DB
@@ -126,11 +126,11 @@ async def msg_ticket_submit(message: Message, state: FSMContext) -> None:
     admin_text = (
         f"{get_pe('ticket')} <b>تیکت جدید #{ticket_id}</b>\n\n"
         f"{get_pe('user')} کاربر: {message.from_user.full_name}\n"
-        f"🆔 شناسه: <code>{message.from_user.id}</code>\n"
-        f"📛 یوزرنیم: @{message.from_user.username or 'ندارد'}\n"
+        f"{get_pe('id_icon')} شناسه: <code>{message.from_user.id}</code>\n"
+        f"{get_pe('name_badge')} یوزرنیم: @{message.from_user.username or 'ندارد'}\n"
         f"{get_pe('calendar')} تاریخ: {ticket_id}\n\n"
-        f"💬 پیام:\n{text.strip()}\n\n"
-        f"💬 برای پاسخ، روی دستور کلیک کنید: /reply_{message.from_user.id}"
+        f"{get_pe('comment')} پیام:\n{text.strip()}\n\n"
+        f"{get_pe('comment')} برای پاسخ، روی دستور کلیک کنید: /reply_{message.from_user.id}"
     )
 
     # 4) Forward to the support admin
@@ -143,7 +143,7 @@ async def msg_ticket_submit(message: Message, state: FSMContext) -> None:
     except Exception as exc:
         logger.error("Failed to forward ticket #%s to admin: %s", ticket_id, exc)
         await message.answer(
-            "⚠️ ارسال تیکت با مشکل مواجه شد. لطفاً بعداً دوباره تلاش کنید."
+            f"{get_pe('warning')} ارسال تیکت با مشکل مواجه شد. لطفاً بعداً دوباره تلاش کنید."
         )
 
 
@@ -175,7 +175,7 @@ async def cb_admin_reply_ticket(callback: CallbackQuery, state: FSMContext) -> N
     await callback.message.answer(
         f"{get_pe('star')} <b>در حال پاسخ به تیکت #{ticket_id}</b>\n\n"
         f"{get_pe('user')} کاربر: {ticket['full_name']} (<code>{ticket['user_id']}</code>)\n"
-        f"💬 پیام اصلی:\n<i>{ticket['message']}</i>\n\n"
+        f"{get_pe('comment')} پیام اصلی:\n<i>{ticket['message']}</i>\n\n"
         "حالا پاسخ خود را بنویسید:",
     )
     await callback.answer()
@@ -194,13 +194,13 @@ async def msg_admin_send_reply(message: Message, state: FSMContext) -> None:
     user_id = data.get("reply_user_id")
 
     if not ticket_id or not user_id:
-        await message.answer("⚠️ خطا: اطلاعات تیکت یافت نشد.")
+        await message.answer(f"{get_pe('warning')} خطا: اطلاعات تیکت یافت نشد.")
         await state.clear()
         return
 
     reply_text = message.text.strip()
     if not reply_text:
-        await message.answer("⚠️ پاسخ نمی‌تواند خالی باشد.")
+        await message.answer(f"{get_pe('warning')} پاسخ نمی‌تواند خالی باشد.")
         return
 
     # 1) Send reply to the user
@@ -217,7 +217,7 @@ async def msg_admin_send_reply(message: Message, state: FSMContext) -> None:
     except Exception as exc:
         logger.error("Failed to send reply to user %s: %s", user_id, exc)
         await message.answer(
-            f"⚠️ ارسال پاسخ به کاربر <code>{user_id}</code> ناموفق بود.\n"
+            f"{get_pe('warning')} ارسال پاسخ به کاربر <code>{user_id}</code> ناموفق بود.\n"
             "ممکن است کاربر ربات را بلاک کرده باشد."
         )
 
@@ -240,7 +240,7 @@ async def msg_admin_send_reply(message: Message, state: FSMContext) -> None:
 async def cmd_admin_reply_by_user(message: Message, state: FSMContext) -> None:
     """Admin starts a quick reply for a specific user by user-id."""
     if message.from_user.id not in config.ADMIN_IDS:
-        await message.answer("⛔ دسترسی غیرمجاز.")
+        await message.answer(f"{get_pe('forbidden')} دسترسی غیرمجاز.")
         return
 
     target_id = int(message.text.strip().split("_", 1)[1])
@@ -256,7 +256,7 @@ async def cmd_admin_reply_by_user(message: Message, state: FSMContext) -> None:
 
     await message.answer(
         f"{get_pe('call')} <b>در حال پاسخ به کاربر</b> <code>{target_id}</code>\n\n"
-        "✍️ لطفا پیام پاسخ خود را بنویسید (برای لغو /cancel را ارسال کنید):",
+        f"{get_pe('writing')} لطفا پیام پاسخ خود را بنویسید (برای لغو /cancel را ارسال کنید):",
     )
 
 
@@ -271,7 +271,7 @@ async def cmd_cancel_ticket_reply(message: Message, state: FSMContext) -> None:
     if message.from_user.id not in config.ADMIN_IDS:
         return
     await state.clear()
-    await message.answer("❌ پاسخ لغو شد.")
+    await message.answer(f"{get_pe('cross')} پاسخ لغو شد.")
 
 
 # ─── Admin sends the reply text (command-based flow) ────────────────
@@ -285,13 +285,13 @@ async def msg_admin_send_direct_reply(message: Message, state: FSMContext) -> No
     data = await state.get_data()
     target_id = data.get("reply_user_id")
     if not target_id:
-        await message.answer("⚠️ خطا: اطلاعات کاربر یافت نشد.")
+        await message.answer(f"{get_pe('warning')} خطا: اطلاعات کاربر یافت نشد.")
         await state.clear()
         return
 
     reply_text = message.text.strip()
     if not reply_text:
-        await message.answer("⚠️ پیام نمی‌تواند خالی باشد.")
+        await message.answer(f"{get_pe('warning')} پیام نمی‌تواند خالی باشد.")
         return
 
     try:
@@ -307,7 +307,7 @@ async def msg_admin_send_direct_reply(message: Message, state: FSMContext) -> No
     except Exception as exc:
         logger.error("Failed to send admin reply to user %s: %s", target_id, exc)
         await message.answer(
-            f"⚠️ ارسال پاسخ به کاربر <code>{target_id}</code> ناموفق بود.\n"
+            f"{get_pe('warning')} ارسال پاسخ به کاربر <code>{target_id}</code> ناموفق بود.\n"
             "ممکن است کاربر ربات را بلاک کرده باشد."
         )
         await state.clear()
@@ -366,6 +366,6 @@ async def cb_admin_close_ticket(callback: CallbackQuery) -> None:
 
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
-            f"✅ تیکت #{ticket_id} بسته شد.",
+            f"{get_pe('check')} تیکت #{ticket_id} بسته شد.",
         )
     await callback.answer("تیکت بسته شد.", show_alert=True)

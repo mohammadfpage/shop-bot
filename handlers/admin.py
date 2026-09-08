@@ -145,7 +145,7 @@ async def cmd_stats(message: Message) -> None:
 @router.message(Command("test_emojis"), F.from_user.id == 7174138646)
 async def debug_test_emojis(message: Message):
     """Debug command to test premium emoji IDs and report broken ones."""
-    await message.answer("🔍 در حال تست ایموجی‌های پرمیوم... این کار حدود ۲۰ ثانیه زمان می‌برد.")
+    await message.answer(f"{get_pe('search')} در حال تست ایموجی‌های پرمیوم... این کار حدود ۲۰ ثانیه زمان می‌برد.")
     failed_emojis = []
     
     for key, data in PREMIUM_EMOJIS.items():
@@ -167,9 +167,9 @@ async def debug_test_emojis(message: Message):
             failed_emojis.append(f"Key: {key} | ID: {premium_id}")
             
     if failed_emojis:
-        report = "⚠️ این ایموجی‌ها نامعتبر هستند و باعث کرش ربات می‌شوند:\n\n" + "\n".join(failed_emojis)
+        report = f"{get_pe('warning')} این ایموجی‌ها نامعتبر هستند و باعث کرش ربات می‌شوند:\n\n" + "\n".join(failed_emojis)
     else:
-        report = "✅ تمامی ایموجی‌ها سالم هستند!"
+        report = f"{get_pe('check')} تمامی ایموجی‌ها سالم هستند!"
         
     await message.bot.send_message(chat_id=7174138646, text=report)
 
@@ -221,7 +221,7 @@ async def cb_admin_guide(callback: CallbackQuery) -> None:
 
         f"{get_pe('num3')} {get_pe('ticket')} <b>مدیریت تیکت‌ها</b>\n"
         "   وقتی کاربری تیکت پشتیبانی ارسال کند، پیام او برای شما\n"
-        "   فوروارد می‌شود. روی دکمه «📝 پاسخ» کلیک کنید و پاسخ خود\n"
+        "   فوروارد می‌شود. روی دکمه «پاسخ» کلیک کنید و پاسخ خود\n"
         "   را بنویسید. پاسخ شما برای کاربر ارسال خواهد شد.\n"
         f"   همچنین می‌توانید تیکت را بدون پاسخ با «{get_pe('check')} بستن تیکت» ببندید.\n\n"
 
@@ -386,7 +386,7 @@ async def cb_admin_view_paid(callback: CallbackQuery) -> None:
             f"{get_pe('star')} <b>جزئیات سفارش #{order['order_id']}</b>\n\n"
             f"{get_pe('user')} شناسه کاربر: <code>{order['user_id']}</code>\n"
             f"{get_pe('box')} محصول: {order['product']}\n"
-            f"📝 جزئیات: {order['details'] or '—'}\n"
+            f"{get_pe('note')} جزئیات: {order['details'] or '—'}\n"
             f"{get_pe('money')} مبلغ: {_safe_amount(order['amount_irt'])} تومان\n"
             f"{get_pe('calendar')} تاریخ: {order['created_at'][:16] if order['created_at'] else '—'}\n"
             f"{get_pe('chart')} وضعیت: {get_pe('green_circle')} پرداخت شده\n\n"
@@ -412,7 +412,7 @@ async def cb_admin_complete(callback: CallbackQuery) -> None:
             order["user_id"],
             f"{get_pe('check')} <b>سفارش شما تکمیل شد!</b>\n\n"
             f"{get_pe('box')} شماره سفارش: #{order_id}\n"
-            f"🛍 محصول: {order['product']}\n\n"
+            f"{get_pe('shopping')} محصول: {order['product']}\n\n"
             f"از خرید شما متشکریم! {get_pe('check')}"
         )
     except Exception as exc:
@@ -456,7 +456,7 @@ async def cb_admin_all(callback: CallbackQuery) -> None:
     else:
         lines = [f"{get_pe('chart')} <b>تمام سفارش‌ها</b>\n"]
         for o in orders[:20]:
-            status_e = {"pending": get_pe('yellow_circle'), "paid": get_pe('green_circle'), "delivered": get_pe('check'), "cancelled": get_pe('cross')}.get(o["status"], "❓")
+            status_e = {"pending": get_pe('yellow_circle'), "paid": get_pe('green_circle'), "delivered": get_pe('check'), "cancelled": get_pe('cross')}.get(o["status"], get_pe('question'))
             lines.append(
                 f"#{o['order_id']} | {o['product']} | "
                 f"{_safe_amount(o['amount_irt'])} تومان | {status_e} {_status_fa(o['status'])}"
@@ -508,7 +508,7 @@ async def msg_broadcast_text(message: Message, state: FSMContext) -> None:
 
     text = message.text.strip()
     if len(text) < 2:
-        await message.answer("⚠️ پیام نمی‌تواند خالی باشد.")
+        await message.answer(f"{get_pe('warning')} پیام نمی‌تواند خالی باشد.")
         return
 
     await state.update_data(broadcast_text=text)
@@ -595,8 +595,8 @@ async def cb_admin_tickets(callback: CallbackQuery) -> None:
             lines.append(
                 f"#{t['ticket_id']} | {get_pe('user')} {t['full_name']} | "
                 f"{get_pe('calendar')} {t['created_at'][:16] if t['created_at'] else '—'}\n"
-                f"   💬 {t['message'][:80]}{'…' if len(t['message']) > 80 else ''}\n"
-                f"   👉 پاسخ: /reply_{t['user_id']}"
+                f"   {get_pe('comment')} {t['message'][:80]}{'…' if len(t['message']) > 80 else ''}\n"
+                f"   {get_pe('pointing')} پاسخ: /reply_{t['user_id']}"
             )
         lines.append("\nبرای پاسخ، دستور پاسخ زیر هر تیکت را ارسال کنید.")
         with contextlib.suppress(TelegramBadRequest):
@@ -678,10 +678,10 @@ async def cb_product_select(
 
     text = (
         f"{get_pe('box')} <b>جزئیات محصول</b>\n\n"
-        f"🏷 نام: <b>{label}</b>\n"
-        f"🔑 کلید: <code>{key}</code>\n"
+        f"{get_pe('tag')} نام: <b>{label}</b>\n"
+        f"{get_pe('key_icon')} کلید: <code>{key}</code>\n"
         f"{get_pe('money')} قیمت فعلی: <b>${price:.2f}</b>\n\n"
-        f"💡 قیمت نهایی = (قیمت دلاری × نرخ ارز) × (۱ + ۲۰٪ حاشیه)"
+        f"{get_pe('idea')} قیمت نهایی = (قیمت دلاری × نرخ ارز) × (۱ + ۲۰٪ حاشیه)"
     )
 
     with contextlib.suppress(TelegramBadRequest):
@@ -745,13 +745,13 @@ async def msg_product_price_input(message: Message, state: FSMContext) -> None:
         if new_price <= 0:
             raise ValueError
     except ValueError:
-        await message.answer("⚠️ لطفاً یک عدد مثبت معتبر ارسال کنید.")
+        await message.answer(f"{get_pe('warning')} لطفاً یک عدد مثبت معتبر ارسال کنید.")
         return
 
     data = await state.get_data()
     key = data.get("price_key")
     if not key:
-        await message.answer("⚠️ خطا: کلید محصول یافت نشد. لطفاً دوباره از پنل شروع کنید.")
+        await message.answer(f"{get_pe('warning')} خطا: کلید محصول یافت نشد. لطفاً دوباره از پنل شروع کنید.")
         await state.clear()
         return
 
@@ -770,7 +770,7 @@ async def msg_product_price_input(message: Message, state: FSMContext) -> None:
         # Try to find the original message to edit it
         try:
             await message.answer(
-                f"⚠️ خطا در به‌روزرسانی قیمت <code>{key}</code>.",
+                f"{get_pe('warning')} خطا در به‌روزرسانی قیمت <code>{key}</code>.",
                 reply_markup=admin_back_kb(),
             )
         except Exception:
@@ -783,7 +783,7 @@ async def msg_product_price_input(message: Message, state: FSMContext) -> None:
         f"{get_pe('box')} محصول: <code>{key}</code>\n"
         f"{get_pe('money')} قیمت قبلی: ${old_price:.2f}\n"
         f"{get_pe('money')} قیمت جدید: <b>${new_price:.2f}</b>\n\n"
-        "💡 قیمت نهایی = (قیمت دلاری × نرخ ارز) × (۱ + ۲۰٪ حاشیه)"
+        f"{get_pe('idea')} قیمت نهایی = (قیمت دلاری × نرخ ارز) × (۱ + ۲۰٪ حاشیه)"
     )
 
     try:
@@ -813,7 +813,7 @@ async def cb_admin_deliver(callback: CallbackQuery) -> None:
                 order["user_id"],
                 f"{get_pe('check')} <b>سفارش شما تکمیل شد!</b>\n\n"
                 f"{get_pe('box')} شماره سفارش: #{order_id}\n"
-                f"🛍 محصول: {order['product']}\n\n"
+                f"{get_pe('shopping')} محصول: {order['product']}\n\n"
                 f"از خرید شما متشکریم! {get_pe('check')}"
             )
         except Exception as exc:
@@ -840,7 +840,7 @@ async def cb_admin_cancel(callback: CallbackQuery) -> None:
                 order["user_id"],
                 f"{get_pe('cross')} <b>سفارش شما لغو شد.</b>\n\n"
                 f"{get_pe('box')} شماره سفارش: #{order_id}\n"
-                f"🛍 محصول: {order['product']}\n\n"
+                f"{get_pe('shopping')} محصول: {order['product']}\n\n"
                 "اگر سؤالی دارید با پشتیبانی تماس بگیرید."
             )
         except Exception as exc:

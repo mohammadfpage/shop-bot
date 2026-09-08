@@ -144,7 +144,7 @@ async def cb_design_tier(callback: CallbackQuery, state: FSMContext) -> None:
 async def msg_design_description(message: Message, state: FSMContext) -> None:
     description = message.text.strip()
     if len(description) < 10:
-        await message.answer("⚠️ لطفاً توضیحات دقیق‌تری ارسال کنید (حداقل ۱۰ کاراکتر).")
+        await message.answer(f"{get_pe('warning')} لطفاً توضیحات دقیق‌تری ارسال کنید (حداقل ۱۰ کاراکتر).")
         return
 
     await state.update_data(description=description)
@@ -163,7 +163,7 @@ async def msg_design_description(message: Message, state: FSMContext) -> None:
 async def msg_design_contact(message: Message, state: FSMContext) -> None:
     contact = message.text.strip()
     if len(contact) < 3:
-        await message.answer("⚠️ لطفاً اطلاعات تماس معتبری ارسال کنید.")
+        await message.answer(f"{get_pe('warning')} لطفاً اطلاعات تماس معتبری ارسال کنید.")
         return
 
     await state.update_data(contact=contact)
@@ -189,7 +189,7 @@ async def msg_design_contact(message: Message, state: FSMContext) -> None:
 
     if not result.success or not result.authority:
         await message.answer(
-            f"❌ درخواست پرداخت ناموفق بود:\n{result.message}",
+            f"{get_pe('cross')} درخواست پرداخت ناموفق بود:\n{result.message}",
             reply_markup=back_to_menu_kb(),
         )
         await state.clear()

@@ -42,10 +42,10 @@ def _format_number(value: object) -> str:
 def _format_item(items: dict, symbol: str, name: str, unit: str) -> str:
     item = items.get(symbol)
     if not item:
-        return f"  {name}: ⚠️ موجود نیست"
+        return f"  {name}: {get_pe('warning')} موجود نیست"
     price = item.get("price")
     change = _as_number(item.get("change_percent"))
-    change_icon = "📈" if change >= 0 else "📉"
+    change_icon = get_pe("arrow_up") if change >= 0 else get_pe("arrow_down")
     return (
         f"  {name}: <b>{_format_number(price)}</b> {unit} "
         f"{change_icon} {change:+.2f}%"
@@ -60,7 +60,7 @@ async def reply_btn_rate(message: Message) -> None:
     # ── Cache not ready yet? ───────────────────────────────────────
     if not rate_cache.is_ready():
         await message.answer(
-            "🔄 در حال بروزرسانی قیمت‌ها... لطفاً چند ثانیه دیگر مجدداً تلاش کنید.",
+            f"{get_pe('refresh')} در حال بروزرسانی قیمت‌ها... لطفاً چند ثانیه دیگر مجدداً تلاش کنید.",
             reply_markup=main_reply_kb(),
         )
         return
@@ -83,29 +83,29 @@ async def reply_btn_rate(message: Message) -> None:
     lines = [f"{get_pe('chart')} <b>قیمت لحظه‌ای ارزها و طلا</b>\n"]
 
     # Popular currencies
-    lines.append("🔸 <b>ارزهای پرکاربرد:</b>")
-    lines.append(_format_item(currency, "USD", "🇺🇸 دلار آمریکا", "تومان"))
-    lines.append(_format_item(currency, "EUR", "🇪🇺 یورو", "تومان"))
-    lines.append(_format_item(currency, "USDT_IRT", "💰 تتر", "تومان"))
+    lines.append(f"{get_pe('money')} <b>ارزهای پرکاربرد:</b>")
+    lines.append(_format_item(currency, "USD", f"{get_pe('flag_us')} دلار آمریکا", "تومان"))
+    lines.append(_format_item(currency, "EUR", f"{get_pe('flag_eu')} یورو", "تومان"))
+    lines.append(_format_item(currency, "USDT_IRT", f"{get_pe('coin_new')} تتر", "تومان"))
     lines.append("")
 
     # Gold & Coins
-    lines.append("🔸 <b>طلا و سکه:</b>")
-    lines.append(_format_item(gold, "IR_GOLD_18K", "🥇 طلای ۱۸ عیار", "تومان"))
-    lines.append(_format_item(gold, "IR_COIN_EMAMI", "🪙 سکه امامی", "تومان"))
-    lines.append(_format_item(gold, "IR_COIN_BAHAR", "🪙 سکه بهار آزادی", "تومان"))
+    lines.append(f"{get_pe('coin_new')} <b>طلا و سکه:</b>")
+    lines.append(_format_item(gold, "IR_GOLD_18K", f"{get_pe('medal_gold')} طلای ۱۸ عیار", "تومان"))
+    lines.append(_format_item(gold, "IR_COIN_EMAMI", f"{get_pe('coin_new')} سکه امامی", "تومان"))
+    lines.append(_format_item(gold, "IR_COIN_BAHAR", f"{get_pe('coin_new')} سکه بهار آزادی", "تومان"))
     lines.append("")
 
     # Cryptocurrencies
-    lines.append("🔸 <b>رمزارزهای اصلی:</b>")
-    lines.append(_format_item(cryptocurrency, "BTC", "₿ بیت‌کوین", "USD"))
-    lines.append(_format_item(cryptocurrency, "ETH", "⟠ اتریوم", "USD"))
-    lines.append(_format_item(cryptocurrency, "SOL", "◎ سولانا", "USD"))
+    lines.append(f"{get_pe('diamond')} <b>رمزارزهای اصلی:</b>")
+    lines.append(_format_item(cryptocurrency, "BTC", f"{get_pe('coin')} بیت‌کوین", "USD"))
+    lines.append(_format_item(cryptocurrency, "ETH", f"{get_pe('diamond')} اتریوم", "USD"))
+    lines.append(_format_item(cryptocurrency, "SOL", f"{get_pe('sparkles')} سولانا", "USD"))
 
     lines.append("")
     lines.append(
-        f"⏰ آخرین بروزرسانی: {rate_cache.last_updated_str()}\n"
-        "🔄 قیمت‌ها هر ۵ دقیقه به‌روز می‌شوند."
+        f"{get_pe('clock')} آخرین بروزرسانی: {rate_cache.last_updated_str()}\n"
+        f"{get_pe('refresh')} قیمت‌ها هر ۵ دقیقه به‌روز می‌شوند."
     )
 
     await message.answer(

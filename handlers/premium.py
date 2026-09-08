@@ -110,7 +110,7 @@ async def cb_choose_target(callback: CallbackQuery, state: FSMContext) -> None:
 async def msg_enter_other_id(message: Message, state: FSMContext) -> None:
     text = message.text.strip()
     if not text.isdigit():
-        await message.answer("⚠️ لطفاً یک شناسه عددی معتبر ارسال کنید.", reply_markup=back_to_menu_kb())
+        await message.answer(f"{get_pe('warning')} لطفاً یک شناسه عددی معتبر ارسال کنید.", reply_markup=back_to_menu_kb())
         return
 
     target_id = int(text)
@@ -143,7 +143,7 @@ async def _initiate_payment(callback: CallbackQuery, state: FSMContext) -> None:
     if not result.success or not result.authority:
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(
-                f"❌ درخواست پرداخت ناموفق بود:\n{result.message}\n\nلطفاً بعداً دوباره تلاش کنید.",
+                f"{get_pe('cross')} درخواست پرداخت ناموفق بود:\n{result.message}\n\nلطفاً بعداً دوباره تلاش کنید.",
                 reply_markup=back_to_menu_kb(),
             )
         await state.clear()
@@ -193,7 +193,7 @@ async def _initiate_payment_msg(message: Message, state: FSMContext) -> None:
 
     if not result.success or not result.authority:
         await message.answer(
-            f"❌ درخواست پرداخت ناموفق بود:\n{result.message}\n\nلطفاً بعداً دوباره تلاش کنید.",
+            f"{get_pe('cross')} درخواست پرداخت ناموفق بود:\n{result.message}\n\nلطفاً بعداً دوباره تلاش کنید.",
             reply_markup=back_to_menu_kb(),
         )
         await state.clear()
