@@ -51,7 +51,6 @@ def welcome_inline_kb() -> InlineKeyboardMarkup:
 # Ordered list of (callback_data, label, emoji_key) for the menu rows
 _MENU_ROWS: list[tuple[str, str, str]] = [
     ("menu:virtual_number", "شماره مجازی", "key_lock"),
-    ("menu:ozvinoo_accounts", "خرید اکانت", "bot"),
     ("menu:premium",     "تلگرام پرمیوم", "purse"),
     ("menu:stars",       "خرید استارز",  "star"),
     ("menu:stars_gift",  "گیفت‌های استارز", "heart_simple"),
@@ -407,50 +406,6 @@ def pay_link_kb(pay_url: str) -> InlineKeyboardMarkup:
                               style="danger",
                               icon_custom_emoji_id=get_premium_id("cross"))],
     ])
-
-
-# ─── Ozvinoo Services (Old API — "خرید اکانت") ─────────────────
-
-def ozvinoo_services_kb(services: list) -> InlineKeyboardMarkup:
-    """Build a keyboard listing available Ozvinoo services."""
-    builder = InlineKeyboardBuilder()
-    for svc in services:
-        builder.button(
-            text=f"{svc.name}",
-            callback_data=f"ozvinoo:svc:{svc.service_id}",
-            style="primary",
-            icon_custom_emoji_id=get_premium_id("bot"),
-        )
-    builder.adjust(1)
-    builder.row(InlineKeyboardButton(
-        text="برگشت ↩️",
-        callback_data="menu:back",
-        style="primary",
-        icon_custom_emoji_id=get_premium_id("down"),
-    ))
-    return builder.as_markup()
-
-
-def ozvinoo_country_kb(countries: list, service_id: int) -> InlineKeyboardMarkup:
-    """Build a keyboard listing countries with prices for a service."""
-    builder = InlineKeyboardBuilder()
-    for c in countries:
-        stock = "✅" if c.in_stock else "❌"
-        price_str = f"{c.final_price_toman:,}".replace(",", "،")
-        builder.button(
-            text=f"{stock} {c.country} — {price_str} تومان",
-            callback_data=f"ozvinoo:buy:{service_id}:{c.country}",
-            style="primary",
-            icon_custom_emoji_id=get_premium_id("key_lock"),
-        )
-    builder.adjust(1)
-    builder.row(InlineKeyboardButton(
-        text="برگشت ↩️",
-        callback_data="ozvinoo:back_services",
-        style="primary",
-        icon_custom_emoji_id=get_premium_id("down"),
-    ))
-    return builder.as_markup()
 
 
 # ─── Virtual Number (New API — "شماره مجازی") ──────────────────────

@@ -4,15 +4,15 @@ All user-facing text in Persian (فارسی).
 """
 
 import contextlib
+import logging
 from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart, Command
 from aiogram.exceptions import TelegramBadRequest
 
-from config import config
 from database.db import get_or_create_user, get_user_orders, get_total_users
-from states.states import VirtualNumberStates, OzvinooAccountStates
+from states.states import VirtualNumberStates
 from keyboards.inline import (
     main_menu_kb,
     back_to_menu_kb,
@@ -26,6 +26,8 @@ from filters import IsAdmin
 from utils.emojis import get_pe
 
 router = Router(name="user")
+
+logger = logging.getLogger(__name__)
 
 
 # ─── /start ──────────────────────────────────────────────────────────
@@ -264,8 +266,6 @@ async def cb_menu_security(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# ─── Market Rates (Live Exchange Rates) ─────────────────────────────
-
 # ─── Virtual Number (شماره مجازی) — New API ───────────────────────
 
 @router.callback_query(F.data == "menu:virtual_number")
@@ -275,12 +275,16 @@ async def cb_menu_virtual_number(callback: CallbackQuery, state: FSMContext) -> 
     from utils.ozvinoo import get_virtual_number_countries
     from keyboards.inline import virtual_country_kb
 
-    countries = await get_virtual_number_countries()
+    try:
+        countries = await get_virtual_number_countries()
+    except Exception as exc:
+        logger.error("Failed to fetch virtual number countries: %s", exc)
+        countries = []
+
     if not countries:
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(
-                f"{get_pe('warning')} <b>خطا در دریافت لیست کشورها</b>\n\n"
-                "لطفاً بعداً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید.",
+                f"{get_pe('warning')} خطا در ارتباط با سرور اوزوینو. لطفا بعدا تلاش کنید.",
                 reply_markup=back_to_menu_kb(),
             )
         return
@@ -409,164 +413,7 @@ async def cb_virtual_confirm_buy(callback: CallbackQuery, state: FSMContext) -> 
     await callback.answer()
 
 
-# ─── Ozvinoo Account Purchase (خرید اکانت) — Old API ───────────────
-
-@router.callback_query(F.data == "menu:ozvinoo_accounts")
-async def cb_menu_ozvinoo_accounts(callback: CallbackQuery, state: FSMContext) -> None:
-    """Show the Ozvinoo services list."""
-    await callback.answer()
-    from utils.ozvinoo import get_services
-    from keyboards.inline import ozvinoo_services_kb
-
-    services = await get_services()
-    if not services:
-        with contextlib.suppress(TelegramBadRequest):
-            await callback.message.edit_text(
-                f"{get_pe('bot')} <b>خرید اکانت</b>\n\n"
-                f"{get_pe('warning')} در حال حاضر سرویسی موجود نیست.\n"
-                "لطفاً بعداً دوباره بررسی کنید.",
-                reply_markup=back_to_menu_kb(),
-            )
-        return
-
-    await state.set_state(OzvinooAccountStates.choose_service)
-    with contextlib.suppress(TelegramBadRequest):
-        await callback.message.edit_text(
-            f"{get_pe('bot')} <b>خرید اکانت</b>\n\n"
-            "یک سرویس را انتخاب کنید:\n"
-            "<i>قیمت‌ها شامل حاشیه سود هستند.</i>",
-            reply_markup=ozvinoo_services_kb(services),
-        )
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("ozvinoo:svc:"), OzvinooAccountStates.choose_service)
-async def cb_ozvinoo_select_service(callback: CallbackQuery, state: FSMContext) -> None:
-    """User selected a service — show country prices."""
-    await callback.answer()
-    service_id = int(callback.data.split(":")[2])
-
-    from utils.ozvinoo import get_services, get_country_prices
-    from keyboards.inline import ozvinoo_country_kb
-
-    services = await get_services()
-    selected_svc = next((s for s in services if s.service_id == service_id), None)
-    if not selected_svc:
-        await callback.answer("⚠️ سرویس یافت نشد.", show_alert=True)
-        return
-
-    countries = await get_country_prices(service_id)
-    if not countries:
-        with contextlib.suppress(TelegramBadRequest):
-            await callback.message.edit_text(
-                f"{get_pe('warning')} <b>کشوری برای این سرویس موجود نیست.</b>\n\n"
-                "لطفاً سرویس دیگری انتخاب کنید.",
-                reply_markup=back_to_menu_kb(),
-            )
-        return
-
-    await state.update_data(service_id=service_id, service_name=selected_svc.name)
-    await state.set_state(OzvinooAccountStates.choose_country)
-
-    with contextlib.suppress(TelegramBadRequest):
-        await callback.message.edit_text(
-            f"{get_pe('bot')} <b>{selected_svc.name}</b>\n\n"
-            "یک کشور را انتخاب کنید:\n"
-            "<i>قیمت‌ها شامل حاشیه سود {margin}% هستند.</i>".format(
-                margin=int(config.ACCOUNT_PROFIT_MARGIN_PERCENT)
-            ),
-            reply_markup=ozvinoo_country_kb(countries, service_id),
-        )
-    await callback.answer()
-
-
-@router.callback_query(F.data == "ozvinoo:back_services", OzvinooAccountStates.choose_country)
-async def cb_ozvinoo_back_services(callback: CallbackQuery, state: FSMContext) -> None:
-    """Go back to service selection."""
-    await callback.answer()
-    from utils.ozvinoo import get_services
-    from keyboards.inline import ozvinoo_services_kb
-
-    services = await get_services()
-    await state.set_state(OzvinooAccountStates.choose_service)
-    with contextlib.suppress(TelegramBadRequest):
-        await callback.message.edit_text(
-            f"{get_pe('bot')} <b>خرید اکانت</b>\n\n"
-            "یک سرویس را انتخاب کنید:",
-            reply_markup=ozvinoo_services_kb(services),
-        )
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("ozvinoo:buy:"), OzvinooAccountStates.choose_country)
-async def cb_ozvinoo_buy(callback: CallbackQuery, state: FSMContext) -> None:
-    """User selected a country — initiate Zarinpal payment."""
-    await callback.answer()
-    parts = callback.data.split(":")
-    service_id = int(parts[2])
-    country = ":".join(parts[3:])  # country name may contain colons
-
-    from utils.ozvinoo import get_country_prices
-    countries = await get_country_prices(service_id)
-    selected = next((c for c in countries if c.country == country), None)
-
-    if not selected:
-        await callback.answer("⚠️ گزینه یافت نشد.", show_alert=True)
-        return
-
-    if not selected.in_stock:
-        await callback.answer("⚠️ این گزینه موجود نیست.", show_alert=True)
-        return
-
-    data = await state.get_data()
-    service_name = data.get("service_name", "اکانت")
-    final_price = selected.final_price_toman
-    price_str = f"{final_price:,}".replace(",", "،")
-
-    from database.db import create_order, create_payment, update_payment_authority
-    from utils.zarinpal import request_payment
-    from keyboards.inline import pay_link_kb
-
-    order_id = await create_order(
-        user_id=callback.from_user.id,
-        product=f"خرید اکانت: {service_name}",
-        details=f"سرویس: {service_name} (ID: {service_id}) | کشور: {country}",
-        amount_irt=final_price,
-    )
-
-    result = await request_payment(
-        amount_irt=final_price,
-        description=f"خرید اکانت {service_name} — {country}",
-    )
-
-    if not result.success or not result.authority:
-        with contextlib.suppress(TelegramBadRequest):
-            await callback.message.edit_text(
-                f"{get_pe('cross')} درخواست پرداخت ناموفق بود:\n{result.message}",
-                reply_markup=back_to_menu_kb(),
-            )
-        await state.clear()
-        return
-
-    payment_id = await create_payment(order_id, final_price)
-    await update_payment_authority(payment_id, result.authority)
-    await state.update_data(
-        order_id=order_id, payment_id=payment_id,
-        authority=result.authority, amount_irt=final_price,
-        service_id=service_id, country=country,
-    )
-    await state.set_state(OzvinooAccountStates.payment)
-
-    with contextlib.suppress(TelegramBadRequest):
-        await callback.message.edit_text(
-            f"{get_pe('card')} <b>پرداخت: {service_name}</b>\n\n"
-            f"{get_pe('web')} کشور: <b>{country}</b>\n"
-            f"{get_pe('money')} مبلغ کل: <b>{price_str} تومان</b>\n\n"
-            "پس از پرداخت موفق، شماره مجازی و کد تأیید برای شما ارسال خواهد شد.",
-            reply_markup=pay_link_kb(result.start_pay_url),
-        )
-    await callback.answer()
-
+# ─── Market Rates (Live Exchange Rates) ─────────────────────────────
 
 @router.callback_query(F.data == "menu:market_rates")
 async def cb_market_rates(callback: CallbackQuery) -> None:

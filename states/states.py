@@ -102,13 +102,3 @@ class VirtualNumberStates(StatesGroup):
     confirm_buy = State()       # user confirms the purchase
     waiting_code = State()      # polling for SMS code
     code_received = State()     # code delivered to user
-
-
-# ─── Ozvinoo Account Purchase (Old API) ─────────────────────────
-class OzvinooAccountStates(StatesGroup):
-    """Flow: choose service → choose country → pay → wait for code → deliver."""
-    choose_service = State()    # user selects a service
-    choose_country = State()    # user selects a country within the service
-    payment = State()           # waiting for Zarinpal payment
-    waiting_code = State()      # polling for SMS code
-    code_received = State()     # code delivered to user
