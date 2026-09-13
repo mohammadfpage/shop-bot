@@ -270,23 +270,7 @@ async def cb_menu_security(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "menu:virtual_number")
 async def cb_menu_virtual_number(callback: CallbackQuery, state: FSMContext) -> None:
-    """Show the virtual number service section."""
-    await callback.answer()
-    from keyboards.inline import virtual_number_kb
-    with contextlib.suppress(TelegramBadRequest):
-        await callback.message.edit_text(
-            f"{get_pe('key_lock')} <b>شماره مجازی</b>\n\n"
-            "با استفاده از شماره‌های مجازی ما، می‌توانید بدون نیاز به سیم‌کارت فیزیکی\n"
-            "حساب‌های کاربری خود را تأیید و مدیریت کنید.\n\n"
-            "یک گزینه را انتخاب کنید:",
-            reply_markup=virtual_number_kb(),
-        )
-    await callback.answer()
-
-
-@router.callback_query(F.data == "virtual:buy")
-async def cb_virtual_buy(callback: CallbackQuery, state: FSMContext) -> None:
-    """Fetch countries and show the country selection keyboard."""
+    """Directly fetch countries and show the country selection keyboard."""
     await callback.answer()
     from utils.ozvinoo import get_virtual_number_countries
     from keyboards.inline import virtual_country_kb
@@ -312,52 +296,20 @@ async def cb_virtual_buy(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
-@router.callback_query(F.data == "virtual:countries")
-async def cb_virtual_countries(callback: CallbackQuery, state: FSMContext) -> None:
-    """Show available countries for virtual numbers."""
-    await callback.answer()
-    from utils.ozvinoo import get_virtual_number_countries
-    from keyboards.inline import virtual_country_kb
-
-    countries = await get_virtual_number_countries()
-    if not countries:
-        with contextlib.suppress(TelegramBadRequest):
-            await callback.message.edit_text(
-                f"{get_pe('warning')} <b>خطا در دریافت لیست کشورها</b>\n\n"
-                "لطفاً بعداً دوباره تلاش کنید.",
-                reply_markup=back_to_menu_kb(),
-            )
-        return
-
-    lines = [f"{get_pe('web')} <b>لیست کشورهای موجود</b>\n"]
-    for c in countries:
-        stock = "✅" if c.get("in_stock") else "❌"
-        price = c.get("final_price", c.get("price", 0))
-        price_str = f"{price:,}".replace(",", "،")
-        lines.append(f"  {stock} {c.get('country', '—')} — {price_str} تومان")
-    lines.append(f"\n{get_pe('call')} برای خرید، روی «خرید شماره مجازی» کلیک کنید.")
-
-    with contextlib.suppress(TelegramBadRequest):
-        await callback.message.edit_text(
-            "\n".join(lines),
-            reply_markup=virtual_number_kb(),
-        )
-    await callback.answer()
-
-
 @router.callback_query(F.data.startswith("virtual:select:"), VirtualNumberStates.choose_country)
 async def cb_virtual_select_country(callback: CallbackQuery, state: FSMContext) -> None:
-    """User selected a country — show confirmation with price."""
+    """User selected a country by index — show confirmation with price."""
     await callback.answer()
-    country_id = int(callback.data.split(":")[2])
+    country_index = int(callback.data.split(":")[2])
 
     from utils.ozvinoo import get_virtual_number_countries
     countries = await get_virtual_number_countries()
-    selected = next((c for c in countries if c.get("country_id") == country_id or c.get("id") == country_id), None)
 
-    if not selected:
+    if country_index < 0 or country_index >= len(countries):
         await callback.answer("⚠️ کشور یافت نشد.", show_alert=True)
         return
+
+    selected = countries[country_index]
 
     if not selected.get("in_stock"):
         await callback.answer("⚠️ این کشور در حال حاضر موجود نیست.", show_alert=True)
@@ -368,7 +320,7 @@ async def cb_virtual_select_country(callback: CallbackQuery, state: FSMContext) 
     country_name = selected.get("country", "نامشخص")
 
     await state.update_data(
-        country_id=country_id,
+        country_index=country_index,
         country_name=country_name,
         price_toman=final_price,
         base_price_toman=selected.get("base_price", final_price),
@@ -406,23 +358,20 @@ async def cb_virtual_confirm_buy(callback: CallbackQuery, state: FSMContext) -> 
     """User confirmed — initiate Zarinpal payment for the virtual number."""
     await callback.answer()
     data = await state.get_data()
-    country_id = data.get("country_id")
+    country_index = data.get("country_index")
     country_name = data.get("country_name", "نامشخص")
     price_toman = data.get("price_toman", 0)
 
-    from utils.pricing import price_display_raw
     from database.db import create_order, create_payment, update_payment_authority
     from utils.zarinpal import request_payment
     from keyboards.inline import pay_link_kb
 
-    # The price is already in Toman (from Ozvinoo API + margin)
-    # We pass it directly as the payment amount
     final_irt = int(price_toman)
 
     order_id = await create_order(
         user_id=callback.from_user.id,
         product=f"شماره مجازی: {country_name}",
-        details=f"کشور: {country_name} | کشور ID: {country_id}",
+        details=f"کشور: {country_name} | کشور index: {country_index}",
         amount_irt=final_irt,
     )
 

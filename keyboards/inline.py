@@ -455,42 +455,21 @@ def ozvinoo_country_kb(countries: list, service_id: int) -> InlineKeyboardMarkup
 
 # ─── Virtual Number (New API — "شماره مجازی") ──────────────────────
 
-def virtual_number_kb() -> InlineKeyboardMarkup:
-    """Build the virtual number service menu."""
-    builder = InlineKeyboardBuilder()
-    builder.button(
-        text="خرید شماره مجازی",
-        callback_data="virtual:buy",
-        style="primary",
-        icon_custom_emoji_id=get_premium_id("key_lock"),
-    )
-    builder.button(
-        text="لیست کشورها",
-        callback_data="virtual:countries",
-        style="primary",
-        icon_custom_emoji_id=get_premium_id("web"),
-    )
-    builder.adjust(1)
-    builder.row(InlineKeyboardButton(
-        text="برگشت ↩️",
-        callback_data="menu:back",
-        style="primary",
-        icon_custom_emoji_id=get_premium_id("down"),
-    ))
-    return builder.as_markup()
-
-
 def virtual_country_kb(countries: list) -> InlineKeyboardMarkup:
-    """Build a keyboard listing countries for virtual number purchase."""
+    """Build a keyboard listing countries for virtual number purchase.
+
+    Uses list index as the country identifier since the API doesn't
+    return explicit country IDs.
+    """
     builder = InlineKeyboardBuilder()
-    for c in countries:
+    for idx, c in enumerate(countries):
         stock = "✅" if c.get("in_stock") else "❌"
         price = c.get("final_price", c.get("price", 0))
         price_str = f"{price:,}".replace(",", "،")
         country_name = c.get("country", "نامشخص")
         builder.button(
             text=f"{stock} {country_name} — {price_str} تومان",
-            callback_data=f"virtual:select:{c.get('country_id', c.get('id', 0))}",
+            callback_data=f"virtual:select:{idx}",
             style="primary",
             icon_custom_emoji_id=get_premium_id("key_lock"),
         )

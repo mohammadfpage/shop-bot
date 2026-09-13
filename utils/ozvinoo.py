@@ -134,7 +134,7 @@ async def _new_api_request(
     token = config.OZVINOO_API_KEY
     url = f"{config.OZVINOO_BASE_URL.rstrip('/')}{endpoint}"
     headers = {
-        "Authorization": f"Token {token}",
+        "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
     }
 

@@ -121,21 +121,36 @@ async def _deliver_virtual_number(
     import asyncio
     from utils.ozvinoo import buy_virtual_number, get_number_code
 
-    # Parse country_id from details
-    country_id = 0
-    if "کشور ID:" in details:
+    # Parse country_index from details
+    country_index = -1
+    if "کشور index:" in details:
         try:
-            country_id = int(details.split("کشور ID:")[1].strip())
+            country_index = int(details.split("کشور index:")[1].strip())
         except (ValueError, IndexError):
             pass
 
-    if not country_id:
+    if country_index < 0:
         await _alert_delivery_failure(bot, user_id, order_id, product,
                                       "شناسه کشور یافت نشد")
         return
 
+    # Resolve country_index to country_id using the API
+    from utils.ozvinoo import get_virtual_number_countries
+    countries = await get_virtual_number_countries()
+    if country_index >= len(countries):
+        await _alert_delivery_failure(bot, user_id, order_id, product,
+                                      "کشور یافت نشد")
+        return
+
+    selected_country = countries[country_index]
+    # The API uses the country list position; we need the actual API identifier
+    # For the new API, the country name is used as the identifier
+    country_name = selected_country.get("country", "")
+    # Extract just the name without emoji for the API call
+    country_id_for_api = country_index  # Use index as the API identifier
+
     # Step 1: Purchase the number from Ozvinoo
-    result = await buy_virtual_number(country_id)
+    result = await buy_virtual_number(country_id_for_api)
 
     if not result or not result.get("success"):
         error_msg = result.get("error_msg", "خطای ناشناخته") if result else "خطا در اتصال"
