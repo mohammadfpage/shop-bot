@@ -269,9 +269,10 @@ async def cb_menu_security(callback: CallbackQuery) -> None:
 # ─── Virtual Number (شماره مجازی) — New API ───────────────────────
 
 @router.callback_query(F.data == "menu:virtual_number")
-async def cb_menu_virtual_number(callback: CallbackQuery, state: FSMContext) -> None:
-    """Directly fetch countries and show the country selection keyboard."""
-    await callback.answer()
+async def cb_menu_virtual_number(callback: CallbackQuery) -> None:
+    import logging
+    logging.getLogger(__name__).warning(">> VIRTUAL NUMBER BUTTON CLICKED <<")
+
     from utils.ozvinoo import get_virtual_number_countries
     from keyboards.inline import virtual_country_kb
 
@@ -287,9 +288,9 @@ async def cb_menu_virtual_number(callback: CallbackQuery, state: FSMContext) -> 
                 f"{get_pe('warning')} خطا در ارتباط با سرور اوزوینو. لطفا بعدا تلاش کنید.",
                 reply_markup=back_to_menu_kb(),
             )
+        await callback.answer()
         return
 
-    await state.set_state(VirtualNumberStates.choose_country)
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
             f"{get_pe('key_lock')} <b>خرید شماره مجازی</b>\n\n"
@@ -553,3 +554,10 @@ def _status_fa(status: str) -> str:
         "delivered": "تحویل شده",
         "cancelled": "لغو شده",
     }.get(status, status)
+
+
+@router.callback_query()
+async def unhandled_callback(callback: CallbackQuery) -> None:
+    import logging
+    logging.getLogger(__name__).error("UNHANDLED BUTTON CLICKED: '%s'", callback.data)
+    await callback.answer("دکمه ناشناخته!", show_alert=True)
