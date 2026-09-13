@@ -50,6 +50,8 @@ def welcome_inline_kb() -> InlineKeyboardMarkup:
 
 # Ordered list of (callback_data, label, emoji_key) for the menu rows
 _MENU_ROWS: list[tuple[str, str, str]] = [
+    ("menu:virtual_number", "شماره مجازی", "key_lock"),
+    ("menu:ozvinoo_accounts", "خرید اکانت", "bot"),
     ("menu:premium",     "تلگرام پرمیوم", "purse"),
     ("menu:stars",       "خرید استارز",  "star"),
     ("menu:stars_gift",  "گیفت‌های استارز", "heart_simple"),
@@ -156,21 +158,22 @@ def stars_target_kb() -> InlineKeyboardMarkup:
 
 # ─── Telegram Stars Gifts (individual items, 2-column layout) ───────
 
-# Each gift: (emoji_key_for_button_icon, stars_count, product_key, display_name)
+# Each gift: (emoji_key_for_button_icon, stars_count, product_key, display_name, static_price_toman)
 # display_name uses plain unicode emojis — Telegram does NOT render custom
 # <tg-emoji> tags inside buttons.
 # Only include products that exist in config.PRICES / product_prices DB.
 _STARS_GIFTS = [
-    ("heart_simple", 15,  "stars_gift_heart_15",   "🤍 قلب"),
-    ("star",         25,  "stars_gift_star_25",    "⭐️ ستاره"),
-    ("sparkles",     25,  "stars_gift_duck_25",    "🦆 اردک"),
-    ("bot",          50,  "stars_gift_robot_50",   "🤖 ربات"),
-    ("diamond",      50,  "stars_gift_diamond_50", "💎 الماس"),
-    ("sparkles",     50,  "stars_gift_cake_50",    "🎂 کیک"),
-    ("star",         100, "stars_gift_bear_100",   "🧸 خرس"),
-    ("fire",         100, "stars_gift_fire_100",   "🔥 آتش"),
-    ("diamond",      250, "stars_gift_crown_250",  "👑 تاج"),
-    ("sparkles",     500, "stars_gift_unicorn_500","🦄 یونیکورن"),
+    ("heart_simple", 15,  "stars_gift_heart_15",   "❤️ قلب",      92000),
+    ("star",         15,  "stars_gift_teddy_15",   "🧸 تدی",      92000),
+    ("gift",         25,  "stars_gift_gift_25",    "🎁 کادو",     138000),
+    ("heart_simple", 25,  "stars_gift_rose_25",    "🌹 گل رز",    138000),
+    ("sparkles",     50,  "stars_gift_cake_50",    "🎂 کیک",      290000),
+    ("heart_simple", 50,  "stars_gift_flower_50",  "💐 گل",       290000),
+    ("sparkles",     50,  "stars_gift_bottle_50",  "🍾 بطری",     290000),
+    ("rocket",       50,  "stars_gift_rocket_50",  "🚀 سفینه",    290000),
+    ("star",         100, "stars_gift_trophy_100", "🏆 جام",      470000),
+    ("sparkles",     100, "stars_gift_ring_100",   "💍 حلقه",     470000),
+    ("diamond",      100, "stars_gift_diamond_100","💎 الماس",    470000),
 ]
 
 
@@ -188,10 +191,8 @@ async def stars_gift_items_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
     # Build 1-column rows for all official gifts (full width each)
-    for emoji_key, stars_count, pkey, display_name in _STARS_GIFTS:
-        usd = price_map.get(pkey, 0.0)
-        toman_str = await price_display(usd)
-        toman_num = toman_str.replace(" تومان", "")
+    for emoji_key, stars_count, pkey, display_name, static_price in _STARS_GIFTS:
+        toman_num = f"{static_price:,}".replace(",", "،")
         builder.button(
             text=f"{display_name} {stars_count} ⭐️ - {toman_num} تومان",
             callback_data=f"stars_gift:item:{pkey}",
@@ -406,6 +407,101 @@ def pay_link_kb(pay_url: str) -> InlineKeyboardMarkup:
                               style="danger",
                               icon_custom_emoji_id=get_premium_id("cross"))],
     ])
+
+
+# ─── Ozvinoo Services (Old API — "خرید اکانت") ─────────────────
+
+def ozvinoo_services_kb(services: list) -> InlineKeyboardMarkup:
+    """Build a keyboard listing available Ozvinoo services."""
+    builder = InlineKeyboardBuilder()
+    for svc in services:
+        builder.button(
+            text=f"{svc.name}",
+            callback_data=f"ozvinoo:svc:{svc.service_id}",
+            style="primary",
+            icon_custom_emoji_id=get_premium_id("bot"),
+        )
+    builder.adjust(1)
+    builder.row(InlineKeyboardButton(
+        text="برگشت ↩️",
+        callback_data="menu:back",
+        style="primary",
+        icon_custom_emoji_id=get_premium_id("down"),
+    ))
+    return builder.as_markup()
+
+
+def ozvinoo_country_kb(countries: list, service_id: int) -> InlineKeyboardMarkup:
+    """Build a keyboard listing countries with prices for a service."""
+    builder = InlineKeyboardBuilder()
+    for c in countries:
+        stock = "✅" if c.in_stock else "❌"
+        price_str = f"{c.final_price_toman:,}".replace(",", "،")
+        builder.button(
+            text=f"{stock} {c.country} — {price_str} تومان",
+            callback_data=f"ozvinoo:buy:{service_id}:{c.country}",
+            style="primary",
+            icon_custom_emoji_id=get_premium_id("key_lock"),
+        )
+    builder.adjust(1)
+    builder.row(InlineKeyboardButton(
+        text="برگشت ↩️",
+        callback_data="ozvinoo:back_services",
+        style="primary",
+        icon_custom_emoji_id=get_premium_id("down"),
+    ))
+    return builder.as_markup()
+
+
+# ─── Virtual Number (New API — "شماره مجازی") ──────────────────────
+
+def virtual_number_kb() -> InlineKeyboardMarkup:
+    """Build the virtual number service menu."""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="خرید شماره مجازی",
+        callback_data="virtual:buy",
+        style="primary",
+        icon_custom_emoji_id=get_premium_id("key_lock"),
+    )
+    builder.button(
+        text="لیست کشورها",
+        callback_data="virtual:countries",
+        style="primary",
+        icon_custom_emoji_id=get_premium_id("web"),
+    )
+    builder.adjust(1)
+    builder.row(InlineKeyboardButton(
+        text="برگشت ↩️",
+        callback_data="menu:back",
+        style="primary",
+        icon_custom_emoji_id=get_premium_id("down"),
+    ))
+    return builder.as_markup()
+
+
+def virtual_country_kb(countries: list) -> InlineKeyboardMarkup:
+    """Build a keyboard listing countries for virtual number purchase."""
+    builder = InlineKeyboardBuilder()
+    for c in countries:
+        stock = "✅" if c.get("in_stock") else "❌"
+        price = c.get("final_price", c.get("price", 0))
+        price_str = f"{price:,}".replace(",", "،")
+        country_name = c.get("country", "نامشخص")
+        builder.button(
+            text=f"{stock} {country_name} — {price_str} تومان",
+            callback_data=f"virtual:select:{c.get('country_id', c.get('id', 0))}",
+            style="primary",
+            icon_custom_emoji_id=get_premium_id("key_lock"),
+        )
+    builder.adjust(1)
+    builder.row(InlineKeyboardButton(
+        text="برگشت ↩️",
+        callback_data="menu:back",
+        style="primary",
+        icon_custom_emoji_id=get_premium_id("down"),
+    ))
+    return builder.as_markup()
 
 
 # ─── Back to menu ───────────────────────────────────────────────────

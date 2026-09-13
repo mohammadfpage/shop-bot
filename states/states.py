@@ -87,3 +87,28 @@ class AdminStates(StatesGroup):
     broadcast_message = State()     # waiting for broadcast text message
     broadcast_photo = State()       # waiting for broadcast photo
     waiting_for_ticket_reply = State()  # admin is typing a support reply to a user
+
+
+# ─── Account Profit Margin Editing ────────────────────────────────
+class AccountMarginState(StatesGroup):
+    """FSM for editing account profit margin."""
+    waiting_for_margin = State()  # admin is typing the new margin percentage
+
+
+# ─── Ozvinoo Virtual Number Purchase ─────────────────────────────
+class VirtualNumberStates(StatesGroup):
+    """Flow: choose country → confirm purchase → wait for code → receive code."""
+    choose_country = State()    # user selects a country
+    confirm_buy = State()       # user confirms the purchase
+    waiting_code = State()      # polling for SMS code
+    code_received = State()     # code delivered to user
+
+
+# ─── Ozvinoo Account Purchase (Old API) ─────────────────────────
+class OzvinooAccountStates(StatesGroup):
+    """Flow: choose service → choose country → pay → wait for code → deliver."""
+    choose_service = State()    # user selects a service
+    choose_country = State()    # user selects a country within the service
+    payment = State()           # waiting for Zarinpal payment
+    waiting_code = State()      # polling for SMS code
+    code_received = State()     # code delivered to user

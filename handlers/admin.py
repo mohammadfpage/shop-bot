@@ -34,7 +34,7 @@ from aiogram.exceptions import TelegramBadRequest
 
 from config import config
 from filters import IsAdmin
-from states.states import AdminStates, ProductState
+from states.states import AdminStates, ProductState, AccountMarginState
 from keyboards.callback_data import ProductCallback
 from keyboards.admin_product import (
     product_list_kb,
@@ -228,6 +228,10 @@ async def cb_admin_guide(callback: CallbackQuery) -> None:
         f"🔹 <b>{get_pe('money')} مدیریت قیمت محصولات</b>\n"
         "   قیمت پایه محصولات (به دلار) را ویرایش کنید.\n"
         "   قیمت نهایی = (قیمت دلاری × نرخ لحظه‌ای ارز) × (۱ + ۲۰٪)\n\n"
+
+        f"🔹 <b>{get_pe('exchange')} حاشیه سود اکانت‌ها</b>\n"
+        "   درصد حاشیه سود اکانت‌های Ozvinoo را تنظیم کنید.\n"
+        "   قیمت نهایی = قیمت پایه × (۱ + حاشیه سود٪)\n\n"
 
         f"🔹 <b>{get_pe('chart')} گزارش مالی</b>\n"
         "   درآمد امروز، هفتگی، ماهانه و کل را مشاهده کنید.\n\n"
@@ -485,6 +489,56 @@ async def cb_admin_finance(callback: CallbackQuery) -> None:
             reply_markup=admin_finance_kb(),
         )
     await callback.answer()
+
+
+@router.callback_query(F.data == "admin:account_margin", IsAdmin())
+async def cb_admin_account_margin(callback: CallbackQuery, state: FSMContext) -> None:
+    """Show current account profit margin and allow admin to change it."""
+    await callback.answer()
+    current_margin = config.ACCOUNT_PROFIT_MARGIN_PERCENT
+    await state.set_state(AccountMarginState.waiting_for_margin)
+    with contextlib.suppress(TelegramBadRequest):
+        await callback.message.edit_text(
+            f"{get_pe('exchange')} <b>حاشیه سود اکانت‌ها</b>\n\n"
+            f"{get_pe('money')} حاشیه فعلی: <b>{current_margin}%</b>\n\n"
+            "لطفاً درصد جدید را ارسال کنید:\n"
+            "(مثال: <code>30</code> برای ۳۰٪ حاشیه سود)\n\n"
+            "قیمت نهایی = قیمت پایه × (۱ + حاشیه سود٪)",
+            reply_markup=admin_back_kb(),
+        )
+    await callback.answer()
+
+
+@router.message(AccountMarginState.waiting_for_margin)
+async def msg_account_margin_input(message: Message, state: FSMContext) -> None:
+    """Receive new account profit margin value and update config."""
+    if not await IsAdmin()(message):
+        return
+
+    text = message.text.strip()
+    try:
+        new_margin = float(text)
+        if new_margin < 0 or new_margin > 500:
+            raise ValueError
+    except ValueError:
+        await message.answer(f"{get_pe('warning')} لطفاً عددی بین ۰ تا ۵۰۰ ارسال کنید.")
+        return
+
+    # Update the in-memory config
+    config.ACCOUNT_PROFIT_MARGIN_PERCENT = new_margin
+    await state.clear()
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    await message.answer(
+        f"{get_pe('check')} <b>حاشیه سود اکانت‌ها بروزرسانی شد!</b>\n\n"
+        f"{get_pe('exchange')} حاشیه جدید: <b>{new_margin}%</b>\n\n"
+        f"{get_pe('idea')} قیمت نهایی اکانت‌ها = قیمت پایه × (۱ + {new_margin}٪)",
+        reply_markup=admin_back_kb(),
+    )
 
 
 @router.callback_query(F.data == "admin:broadcast", IsAdmin())

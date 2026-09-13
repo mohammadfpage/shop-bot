@@ -38,7 +38,11 @@ async def deliver_product(
     extra = extra or {}
 
     try:
-        if "ChatGPT" in product or "Gemini" in product:
+        if "شماره مجازی" in product or "virtual" in product.lower():
+            await _deliver_virtual_number(bot, user_id, order_id, product, details)
+        elif "خرید اکانت" in product or "ozvinoo" in product.lower():
+            await _deliver_ozvinoo_account(bot, user_id, order_id, product, details)
+        elif "ChatGPT" in product or "Gemini" in product:
             await _deliver_ai_account(bot, user_id, order_id, product)
         elif "طراحی" in product or "Design" in product:
             await _deliver_design(bot, user_id, order_id, product, details)
@@ -106,6 +110,174 @@ async def _deliver_design(
         await _notify_admins(bot, admin_msg)
 
 
+async def _deliver_virtual_number(
+    bot: Bot, user_id: int, order_id: int, product: str, details: str
+) -> None:
+    """Deliver a virtual number — call Ozvinoo API to purchase the number,
+    then poll for the SMS code and send it to the user.
+
+    If the Ozvinoo API fails AFTER payment, alert the admin immediately.
+    """
+    import asyncio
+    from utils.ozvinoo import buy_virtual_number, get_number_code
+
+    # Parse country_id from details
+    country_id = 0
+    if "کشور ID:" in details:
+        try:
+            country_id = int(details.split("کشور ID:")[1].strip())
+        except (ValueError, IndexError):
+            pass
+
+    if not country_id:
+        await _alert_delivery_failure(bot, user_id, order_id, product,
+                                      "شناسه کشور یافت نشد")
+        return
+
+    # Step 1: Purchase the number from Ozvinoo
+    result = await buy_virtual_number(country_id)
+
+    if not result or not result.get("success"):
+        error_msg = result.get("error_msg", "خطای ناشناخته") if result else "خطا در اتصال"
+        await _alert_delivery_failure(bot, user_id, order_id, product, error_msg)
+        return
+
+    ozvinoo_order_id = result.get("order_id", 0)
+    number = result.get("number", "نامشخص")
+    country = result.get("country", "نامشخص")
+
+    # Step 2: Send the number to the user
+    await _safe_send(
+        bot,
+        user_id,
+        f"{get_pe('sparkles')} <b>پرداخت موفق!</b>\n\n"
+        f"{get_pe('key_lock')} <b>شماره مجازی شما:</b>\n"
+        f"📱 شماره: <code>{number}</code>\n"
+        f"🌍 کشور: {country}\n\n"
+        "در حال دریافت کد تأیید... لطفاً صبر کنید.\n"
+        "<i>حداکثر ۲ دقیقه زمان می‌برد.</i>",
+    )
+
+    # Step 3: Poll for the SMS code (up to 2 minutes, every 5 seconds)
+    code = None
+    for attempt in range(24):  # 24 × 5s = 120s
+        await asyncio.sleep(5)
+        code_result = await get_number_code(ozvinoo_order_id)
+
+        if code_result and code_result.get("is_ready"):
+            code = code_result.get("code", "")
+            break
+
+        if code_result and code_result.get("error_code") not in ("wait_code", ""):
+            # Non-retryable error
+            await _alert_delivery_failure(bot, user_id, order_id, product,
+                                          code_result.get("error_msg", "خطا"))
+            return
+
+    if code:
+        await _safe_send(
+            bot,
+            user_id,
+            f"{get_pe('check')} <b>کد تأیید دریافت شد!</b>\n\n"
+            f"📱 شماره: <code>{number}</code>\n"
+            f"🔑 کد تأیید: <code>{code}</code>\n\n"
+            "از این کد برای فعال‌سازی حساب تلگرام خود استفاده کنید.\n"
+            f"{get_pe('warning')} این کد محرمانه است، آن را با کسی به اشتراک نگذارید.",
+        )
+    else:
+        # Code not received within timeout
+        await _alert_delivery_failure(
+            bot, user_id, order_id, product,
+            "کد تأیید ظرف ۲ دقیقه دریافت نشد",
+            extra_info=f"شماره: {number}\nشناسه سفارش Ozvinoo: {ozvinoo_order_id}",
+        )
+
+
+async def _deliver_ozvinoo_account(
+    bot: Bot, user_id: int, order_id: int, product: str, details: str
+) -> None:
+    """Deliver an Ozvinoo account — call the old API to purchase a number,
+    then poll for the SMS code.
+
+    If the Ozvinoo API fails AFTER payment, alert the admin immediately.
+    """
+    import asyncio
+    from utils.ozvinoo import purchase_number, get_verification_code
+
+    # Parse service_id and country from details
+    # details format: "سرویس: X (ID: 123) | کشور: لهستان 🇵🇱"
+    service_id = 0
+    country = ""
+    try:
+        if "ID:" in details:
+            service_id = int(details.split("ID:")[1].split(")")[0].strip())
+        if "کشور:" in details:
+            country = details.split("کشور:")[1].strip()
+    except (ValueError, IndexError):
+        pass
+
+    if not service_id or not country:
+        await _alert_delivery_failure(bot, user_id, order_id, product,
+                                      "اطلاعات سرویس/کشور ناقص است")
+        return
+
+    # Step 1: Purchase the number from Ozvinoo (old API)
+    result = await purchase_number(service_id, country)
+
+    if not result or not result.get("success"):
+        error_msg = result.get("error_msg", "خطای ناشناخته") if result else "خطا در اتصال"
+        await _alert_delivery_failure(bot, user_id, order_id, product, error_msg)
+        return
+
+    request_id = result.get("request_id", 0)
+    number = result.get("number", "نامشخص")
+    country_name = result.get("country", country)
+
+    # Step 2: Send the number to the user
+    await _safe_send(
+        bot,
+        user_id,
+        f"{get_pe('sparkles')} <b>پرداخت موفق!</b>\n\n"
+        f"{get_pe('bot')} <b>اکانت شما:</b>\n"
+        f"📱 شماره: <code>{number}</code>\n"
+        f"🌍 کشور: {country_name}\n\n"
+        "در حال دریافت کد تأیید... لطفاً صبر کنید.\n"
+        "<i>حداکثر ۲ دقیقه زمان می‌برد.</i>",
+    )
+
+    # Step 3: Poll for the SMS code (up to 2 minutes, every 5 seconds)
+    code = None
+    for attempt in range(24):  # 24 × 5s = 120s
+        await asyncio.sleep(5)
+        code_result = await get_verification_code(request_id)
+
+        if code_result and code_result.get("is_ready"):
+            code = code_result.get("code", "")
+            break
+
+        if code_result and code_result.get("error_code") not in ("wait_code", ""):
+            await _alert_delivery_failure(bot, user_id, order_id, product,
+                                          code_result.get("error_msg", "خطا"))
+            return
+
+    if code:
+        await _safe_send(
+            bot,
+            user_id,
+            f"{get_pe('check')} <b>کد تأیید دریافت شد!</b>\n\n"
+            f"📱 شماره: <code>{number}</code>\n"
+            f"🔑 کد تأیید: <code>{code}</code>\n\n"
+            "از این کد برای فعال‌سازی حساب تلگرام خود استفاده کنید.\n"
+            f"{get_pe('warning')} این کد محرمانه است، آن را با کسی به اشتراک نگذارید.",
+        )
+    else:
+        await _alert_delivery_failure(
+            bot, user_id, order_id, product,
+            "کد تأیید ظرف ۲ دقیقه دریافت نشد",
+            extra_info=f"شماره: {number}\nشناسه درخواست: {request_id}",
+        )
+
+
 async def _deliver_generic(bot: Bot, user_id: int, order_id: int, product: str) -> None:
     await _safe_send(
         bot,
@@ -142,3 +314,59 @@ async def _safe_send(bot: Bot, user_id: int, text: str) -> None:
 async def _notify_admins(bot: Bot, text: str) -> None:
     for admin_id in config.ADMIN_IDS:
         await _safe_send(bot, admin_id, text)
+
+
+async def _alert_delivery_failure(
+    bot: Bot,
+    user_id: int,
+    order_id: int,
+    product: str,
+    error_msg: str,
+    extra_info: str = "",
+) -> None:
+    """Alert both the user and admin when Ozvinoo delivery fails.
+
+    The user is told their payment succeeded but delivery had an issue.
+    The admin receives full transaction details for manual resolution.
+    """
+    from database.db import get_order
+
+    # 1. Notify the user
+    await _safe_send(
+        bot,
+        user_id,
+        f"{get_pe('warning')} <b>پرداخت شما موفق بود اما در تحویل خودکار مشکلی پیش آمد.</b>\n\n"
+        f"تیکت شما برای پشتیبانی ارسال شد و اکانت به زودی تحویل می‌گردد.\n\n"
+        f"{get_pe('ticket')} شماره سفارش: <code>#{order_id}</code>\n"
+        f"{get_pe('call')} لطفاً منتظر پاسخ پشتیبانی باشید.",
+    )
+
+    # 2. Notify all admins with full details
+    order = await get_order(order_id)
+    order_info = ""
+    if order:
+        order_info = (
+            f"{get_pe('box')} شماره سفارش: #{order['order_id']}\n"
+            f"{get_pe('user')} کاربر: <code>{order['user_id']}</code>\n"
+            f"{get_pe('shopping')} محصول: {order['product']}\n"
+            f"{get_pe('note')} جزئیات: {order['details']}\n"
+            f"{get_pe('money')} مبلغ: {order['amount_irt']:,} تومان\n"
+        )
+
+    admin_msg = (
+        f"{get_pe('cross')} <b>خطا در تحویل خودکار سفارش #{order_id}</b>\n\n"
+        f"{order_info}\n"
+        f"{get_pe('warning')} خطا: {error_msg}\n"
+    )
+    if extra_info:
+        admin_msg += f"\n{get_pe('note')} اطلاعات اضافی:\n{extra_info}\n"
+
+    admin_msg += (
+        f"\n{get_pe('call')} لطفاً سفارش را به صورت دستی پردازش کنید."
+    )
+
+    await _notify_admins(bot, admin_msg)
+    logger.warning(
+        "Ozvinoo delivery failure for order #%s (user %s): %s",
+        order_id, user_id, error_msg,
+    )

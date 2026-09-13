@@ -236,29 +236,31 @@ async def _stars_payment_msg(message: Message, state: FSMContext) -> None:
 # Mapping from product_key to stars count (for order details)
 _GIFT_STARS_MAP: dict[str, int] = {
     "stars_gift_heart_15": 15,
-    "stars_gift_star_25": 25,
-    "stars_gift_duck_25": 25,
-    "stars_gift_robot_50": 50,
-    "stars_gift_diamond_50": 50,
+    "stars_gift_teddy_15": 15,
+    "stars_gift_gift_25": 25,
+    "stars_gift_rose_25": 25,
     "stars_gift_cake_50": 50,
-    "stars_gift_bear_100": 100,
-    "stars_gift_fire_100": 100,
-    "stars_gift_crown_250": 250,
-    "stars_gift_unicorn_500": 500,
+    "stars_gift_flower_50": 50,
+    "stars_gift_bottle_50": 50,
+    "stars_gift_rocket_50": 50,
+    "stars_gift_trophy_100": 100,
+    "stars_gift_ring_100": 100,
+    "stars_gift_diamond_100": 100,
 }
 
 # Mapping from product_key to emoji (for order details)
 _GIFT_EMOJI_MAP: dict[str, str] = {
-    "stars_gift_heart_15": "🤍",
-    "stars_gift_star_25": "⭐️",
-    "stars_gift_duck_25": "🦆",
-    "stars_gift_robot_50": "🤖",
-    "stars_gift_diamond_50": "💎",
+    "stars_gift_heart_15": "❤️",
+    "stars_gift_teddy_15": "🧸",
+    "stars_gift_gift_25": "🎁",
+    "stars_gift_rose_25": "🌹",
     "stars_gift_cake_50": "🎂",
-    "stars_gift_bear_100": "🧸",
-    "stars_gift_fire_100": "🔥",
-    "stars_gift_crown_250": "👑",
-    "stars_gift_unicorn_500": "🦄",
+    "stars_gift_flower_50": "💐",
+    "stars_gift_bottle_50": "🍾",
+    "stars_gift_rocket_50": "🚀",
+    "stars_gift_trophy_100": "🏆",
+    "stars_gift_ring_100": "💍",
+    "stars_gift_diamond_100": "💎",
 }
 
 

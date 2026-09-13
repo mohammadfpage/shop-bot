@@ -61,6 +61,14 @@ class Config:
     # ─── Profit Margin ──────────────────────────────────────────────────
     PROFIT_MARGIN_PERCENT: float = 20.0  # 20% on top of USD price * rate
 
+    # ─── Ozvinoo Account Purchasing API ────────────────────────────────
+    OZVINOO_BASE_URL: str = "https://api.ozvinoo.xyz/"
+    OZVINOO_API_KEY: str = os.getenv(
+        "OZVINOO_API_KEY",
+        "1652089506:3z6nfh74s943Bwk4Q8vRc6bBdVaKjw1962ao38cldTbA",
+    )
+    ACCOUNT_PROFIT_MARGIN_PERCENT: float = 30.0  # 30% margin on account purchases
+
     # ─── Default Product Prices (in USD) — used as seed for DB ──────────
     PRICES: dict = field(default_factory=lambda: {
         # Telegram Premium
@@ -104,15 +112,16 @@ class Config:
 
         # Stars Gifts (individual items — official Telegram Star Gifts)
         "stars_gift_heart_15": 0.49,
-        "stars_gift_star_25": 0.99,
-        "stars_gift_duck_25": 0.99,
-        "stars_gift_robot_50": 1.49,
-        "stars_gift_diamond_50": 1.49,
+        "stars_gift_teddy_15": 0.49,
+        "stars_gift_gift_25": 0.99,
+        "stars_gift_rose_25": 0.99,
         "stars_gift_cake_50": 1.49,
-        "stars_gift_bear_100": 2.99,
-        "stars_gift_fire_100": 2.99,
-        "stars_gift_crown_250": 4.99,
-        "stars_gift_unicorn_500": 9.99,
+        "stars_gift_flower_50": 1.49,
+        "stars_gift_bottle_50": 1.49,
+        "stars_gift_rocket_50": 1.49,
+        "stars_gift_trophy_100": 2.99,
+        "stars_gift_ring_100": 2.99,
+        "stars_gift_diamond_100": 2.99,
     })
 
     # ─── Human-readable product labels (Persian) ────────────────────────
@@ -146,16 +155,17 @@ class Config:
         "design_logo_pro": "لوگو — حرفه‌ای",
         "design_logo_special": "لوگو — ویژه",
         # Stars Gifts (individual — official Telegram Star Gifts)
-        "stars_gift_heart_15": "گیفت قلب 🤍 ۱۵ استارز",
-        "stars_gift_star_25": "گیفت ستاره ⭐️ ۲۵ استارز",
-        "stars_gift_duck_25": "گیفت اردک 🦆 ۲۵ استارز",
-        "stars_gift_robot_50": "گیفت ربات 🤖 ۵۰ استارز",
-        "stars_gift_diamond_50": "گیفت الماس 💎 ۵۰ استارز",
-        "stars_gift_cake_50": "گیفت کیک 🎂 ۵۰ استارز",
-        "stars_gift_bear_100": "گیفت خرس 🧸 ۱۰۰ استارز",
-        "stars_gift_fire_100": "گیفت آتش 🔥 ۱۰۰ استارز",
-        "stars_gift_crown_250": "گیفت تاج 👑 ۲۵۰ استارز",
-        "stars_gift_unicorn_500": "گیفت یونیکورن 🦄 ۵۰۰ استارز",
+        "stars_gift_heart_15": "❤️ گیفت قلب",
+        "stars_gift_teddy_15": "🧸 گیفت تدی",
+        "stars_gift_gift_25": "🎁 گیفت کادو",
+        "stars_gift_rose_25": "🌹 گیفت گل رز",
+        "stars_gift_cake_50": "🎂 گیفت کیک",
+        "stars_gift_flower_50": "💐 گیفت گل",
+        "stars_gift_bottle_50": "🍾 گیفت بطری",
+        "stars_gift_rocket_50": "🚀 گیفت سفینه",
+        "stars_gift_trophy_100": "🏆 گیفت جام",
+        "stars_gift_ring_100": "💍 گیفت حلقه",
+        "stars_gift_diamond_100": "💎 گیفت الماس",
     })
 
     # ─── Service Tariffs (page security) ───────────────────────────────
