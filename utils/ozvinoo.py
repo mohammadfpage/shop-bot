@@ -8,6 +8,7 @@ The provider strictly uses the V1 /web/{token}/... format for EVERYTHING:
     GET /web/{token}/get-prices/{service_id}       → countries with base prices
     GET /web/{token}/getNumber/{service_id}/{country} → buy a virtual number
     GET /web/{token}/getCode/{request_id}          → fetch the SMS verification code
+    GET /web/{token}/get-balance                   → fetch panel balance
 
 Dynamic Profit Margin:
     Final_Price = Base_Price + (Base_Price × (Margin / 100))
@@ -40,6 +41,26 @@ def _is_cache_valid() -> bool:
 # ══════════════════════════════════════════════════════════════════════
 #  VIRTUAL NUMBERS (V1 /web/{token}/ API — "شماره مجازی")
 # ══════════════════════════════════════════════════════════════════════
+
+async def get_panel_balance() -> int:
+    """Fetch the Ozvinoo panel balance.
+    
+    Returns the balance as an integer, or 0 if the request fails.
+    """
+    url = f"https://api.ozvinoo.xyz/web/{TOKEN}/get-balance"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as resp:
+                data = await resp.json()
+                if isinstance(data, dict) and "balance" in data:
+                    return int(data["balance"])
+                elif isinstance(data, (int, float, str)):
+                    return int(data)
+                return 0
+    except Exception as e:
+        logger.error(f"Error fetching Ozvinoo balance: {e}")
+        return 0
+
 
 async def get_telegram_countries() -> Optional[list[dict]]:
     """Fetch Telegram countries and apply the profit margin.

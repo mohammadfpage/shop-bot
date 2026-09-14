@@ -24,6 +24,7 @@ from keyboards.admin_reply import admin_reply_kb
 from keyboards.callback_data import WelcomeCallback
 from filters import IsAdmin
 from utils.emojis import get_pe
+from utils.ozvinoo import get_panel_balance
 
 router = Router(name="user")
 
@@ -396,6 +397,21 @@ async def cb_virtual_confirm_buy(callback: CallbackQuery, state: FSMContext) -> 
     from keyboards.inline import pay_link_kb
 
     final_irt = int(price_toman)
+    base_price = data.get("base_price_toman", final_irt)
+
+    # ── Pre-purchase Ozvinoo panel balance check ──
+    panel_balance = await get_panel_balance()
+    if panel_balance < base_price:
+        with contextlib.suppress(TelegramBadRequest):
+            await callback.message.edit_text(
+                f"{get_pe('warning')} <b>موجودی پنل اوزوینو کافی نیست.</b>\n\n"
+                f"موجودی فعلی: <b>{panel_balance:,}</b> تومان\n"
+                f"قیمت پایه شماره: <b>{base_price:,}</b> تومان\n\n"
+                "لطفاً بعداً دوباره تلاش کنید.",
+                reply_markup=back_to_menu_kb(),
+            )
+        await state.clear()
+        return
 
     order_id = await create_order(
         user_id=callback.from_user.id,
