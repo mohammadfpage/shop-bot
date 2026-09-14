@@ -271,50 +271,40 @@ async def cb_menu_security(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "menu:virtual_number")
 async def cb_menu_virtual_number(callback: CallbackQuery) -> None:
-    """Show the application (service) selection menu."""
-    try:
-        from utils.ozvinoo import get_applications
-        from keyboards.inline import virtual_service_kb
-
-        await callback.message.edit_text("⏳ در حال دریافت لیست سرویس‌ها...")
-
-        services = await get_applications()
-
-        if not services:
-            await callback.message.edit_text(
-                "⚠️ خطا در ارتباط با سرور اوزوینو. لطفاً لاگ را بررسی کنید.",
-                reply_markup=back_to_menu_kb(),
-            )
-            return
-
+    """Show the static application-selection menu (App → Country flow)."""
+    from keyboards.inline import virtual_services_kb
+    with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
             "📱 <b>سرویس شماره مجازی</b>\n"
             "اپلیکیشن مورد نظر خود را انتخاب کنید:",
-            reply_markup=virtual_service_kb(services),
+            reply_markup=virtual_services_kb(),
         )
-    except Exception as e:
-        logging.getLogger(__name__).error(f"CRASH IN SERVICE MENU: {e}", exc_info=True)
-        await callback.message.answer(f"خطای سیستمی: {e}")
+    await callback.answer()
 
 
-@router.callback_query(F.data.startswith("v_service:"))
-async def cb_virtual_service(callback: CallbackQuery, state: FSMContext) -> None:
-    """A service was selected — fetch its countries and show page 0."""
+@router.callback_query(F.data.startswith("v_app:"))
+async def cb_app_selected(callback: CallbackQuery, state: FSMContext) -> None:
+    """An app was selected — fetch its countries and show the table (page 0)."""
     try:
-        service_id = int(callback.data.split(":")[1])
+        service_id = callback.data.split(":", 1)[1]
 
-        from utils.ozvinoo import get_countries
+        from utils.ozvinoo import get_telegram_countries
         from keyboards.inline import virtual_country_kb
+        from keyboards.inline import back_to_menu_kb
         from states.states import VirtualNumberStates
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
         await callback.message.edit_text("⏳ در حال دریافت لیست کشورها...")
 
-        countries = await get_countries(service_id)
+        countries = await get_telegram_countries(service_id=service_id)
 
         if not countries:
+            retry_kb = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="🔙 بازگشت", callback_data="menu:virtual_number")
+            ]])
             await callback.message.edit_text(
-                "⚠️ خطا در ارتباط با سرور اوزوینو. لطفاً لاگ را بررسی کنید.",
-                reply_markup=back_to_menu_kb(),
+                "⚠️ در حال حاضر شماره‌ای برای این سرویس موجود نیست.",
+                reply_markup=retry_kb,
             )
             return
 
@@ -328,8 +318,20 @@ async def cb_virtual_service(callback: CallbackQuery, state: FSMContext) -> None
             reply_markup=virtual_country_kb(countries, service_id, page=0),
         )
     except Exception as e:
-        logging.getLogger(__name__).error(f"CRASH IN SERVICE HANDLER: {e}", exc_info=True)
+        logging.getLogger(__name__).error(f"CRASH IN APP HANDLER: {e}", exc_info=True)
         await callback.message.answer(f"خطای سیستمی: {e}")
+
+
+@router.callback_query(F.data == "menu:back_main")
+async def cb_back_to_main(callback: CallbackQuery) -> None:
+    """Back to the main shop menu (used by the Virtual Number grid footer)."""
+    await callback.answer()
+    with contextlib.suppress(TelegramBadRequest):
+        await callback.message.edit_text(
+            f"{get_pe('home')} <b>منوی اصلی</b>\nیک سرویس را انتخاب کنید:",
+            reply_markup=await main_menu_kb(),
+        )
+    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("v_page:"))
@@ -337,7 +339,7 @@ async def cb_virtual_country_page(callback: CallbackQuery, state: FSMContext) ->
     """Flip between virtual-country pages using the FSM-cached list."""
     try:
         parts = callback.data.split(":")
-        service_id = int(parts[1])
+        service_id = parts[1]
         page = int(parts[2])
 
         from keyboards.inline import virtual_country_kb
@@ -373,7 +375,7 @@ async def cb_virtual_buy(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
     parts = callback.data.split(":")
-    service_id = int(parts[1])
+    service_id = parts[1]
     country = ":".join(parts[2:])  # country may contain no ':'; kept safe
 
     from utils.ozvinoo import get_countries
@@ -416,7 +418,7 @@ async def cb_virtual_buy(callback: CallbackQuery, state: FSMContext) -> None:
                               style="success",
                               icon_custom_emoji_id=get_premium_id("check"))],
         [InlineKeyboardButton(text="انصراف",
-                              callback_data=f"v_service:{service_id}",
+                              callback_data=f"v_app:{service_id}",
                               style="danger",
                               icon_custom_emoji_id=get_premium_id("cross"))],
     ])

@@ -120,18 +120,17 @@ async def get_applications() -> Optional[list[dict]]:
         return None
 
 
-async def _resolve_service_id(code: str = "tg") -> Optional[int]:
-    """Resolve a service id by its app ``code`` (e.g. 'tg' → Telegram)."""
-    apps = await get_applications()
-    if not apps:
-        return None
-    for app in apps:
-        if str(app.get("code", "")).lower() == code.lower():
-            return app.get("service_id")
-    return apps[0]["service_id"] if apps else None
+async def get_telegram_countries(service_id) -> Optional[list[dict]]:
+    """Fetch countries for a given service and apply the live profit margin.
+
+    ``service_id`` may be a numeric id (e.g. 1) or a provider code
+    (e.g. "tg", "change", "imo") — it is injected into the
+    ``/web/{token}/get-prices/{service_id}`` URL.
+    """
+    return await get_countries(service_id)
 
 
-async def get_countries(service_id: int) -> Optional[list[dict]]:
+async def get_countries(service_id) -> Optional[list[dict]]:
     """Fetch countries for a service and apply the live profit margin.
 
     STRICT ERROR HANDLING build:
@@ -175,15 +174,6 @@ async def get_countries(service_id: int) -> Optional[list[dict]]:
     except Exception as exc:
         logger.error(f"FATAL ERROR in get_countries: {exc}", exc_info=True)
         return None
-
-
-async def get_telegram_countries() -> Optional[list[dict]]:
-    """Backwards-compatible wrapper: resolve Telegram's service id, then
-    return its countries with the live profit margin applied."""
-    service_id = await _resolve_service_id("tg")
-    if service_id is None:
-        return None
-    return await get_countries(service_id)
 
 
 async def buy_virtual_number(service_id: int, country: str) -> Optional[dict]:

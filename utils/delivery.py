@@ -126,7 +126,7 @@ async def _deliver_virtual_number(
         try:
             service_part = details.split("|")[0].split("سرویس:")[1].strip()
             country_part = details.split("|")[1].split("کشور:")[1].strip()
-            service_id = int(service_part)
+            service_id = service_part
             country = country_part
         except (ValueError, IndexError):
             pass

@@ -410,55 +410,41 @@ def pay_link_kb(pay_url: str) -> InlineKeyboardMarkup:
 
 # ─── Virtual Number (New API — "شماره مجازی") ──────────────────────
 
-_SERVICE_EMOJIS: dict = {
-    "tg": "✈️",
-    "whatsapp": "💬",
-    "wa": "💬",
-    "instagram": "📸",
-    "ig": "📸",
-    "google": "🔍",
-    "apple": "🍏",
-    "tinder": "🔥",
-    "telegram": "✈️",
-}
+def virtual_services_kb() -> InlineKeyboardMarkup:
+    """Static application-selection grid for the Virtual Number shop.
 
-
-def virtual_service_kb(services: list) -> InlineKeyboardMarkup:
-    """Build a grid-style service (application) selection keyboard.
-
-    Each service becomes one button; 3 buttons per row on wide screens.
-    Clicking a service passes its ``service_id`` into the country menu.
+    Matches the reference UI: a spotlight "Telegram" row on top, then a
+    3-column grid of the popular apps. Prices are fetched live per app on tap.
     """
     builder = InlineKeyboardBuilder()
-    for app in services:
-        service_id = app.get("service_id")
-        if service_id is None:
-            continue
-        code = str(app.get("code", "")).lower()
-        title = app.get("title") or app.get("name") or code
-        emoji = _SERVICE_EMOJIS.get(code, _SERVICE_EMOJIS.get(title.lower(), "📱"))
-        builder.button(
-            text=f"{emoji} {title}",
-            callback_data=f"v_service:{service_id}",
-        )
-    builder.adjust(3)
 
-    if not services:
-        builder.button(
-            text="⚠️ سرویسی یافت نشد",
-            callback_data="ignore",
-        )
+    # Top row — Telegram dedicated panel
+    builder.button(text="💎 تلگرام - پنل اختصاصی", callback_data="v_app:1")
 
+    # Grid apps (typical IDs; the bot fetches live prices for these)
+    apps = [
+        ("چنج نامبر 🗳", "v_app:change"),
+        ("اینستاگرام 🚀", "v_app:3"),
+        ("واتساپ ✳️", "v_app:2"),
+        ("ایمو 📶", "v_app:imo"),
+        ("فیسبوک 📬", "v_app:fb"),
+        ("گوگل 🔍", "v_app:google"),
+        ("تیک تاک ⌚", "v_app:tiktok"),
+        ("ایکس ❎", "v_app:x"),
+        ("وی چت 💬", "v_app:wechat"),
+    ]
+    for text, cb in apps:
+        builder.button(text=text, callback_data=cb)
+
+    builder.adjust(1, 3, 3, 3)  # 1 on top, then 3 per row
     builder.row(InlineKeyboardButton(
-        text="بازگشت به منو",
-        callback_data="menu:back",
-        style="primary",
-        icon_custom_emoji_id=get_premium_id("down"),
+        text="🔙 بازگشت",
+        callback_data="menu:back_main",
     ))
     return builder.as_markup()
 
 
-def virtual_country_kb(countries: list, service_id: int, page: int = 0) -> InlineKeyboardMarkup:
+def virtual_country_kb(countries: list, service_id, page: int = 0) -> InlineKeyboardMarkup:
     """Build a paginated, table-style keyboard for virtual number purchase.
 
     Layout (exactly 10 countries per page):
