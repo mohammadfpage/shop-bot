@@ -410,52 +410,116 @@ def pay_link_kb(pay_url: str) -> InlineKeyboardMarkup:
 
 # ─── Virtual Number (New API — "شماره مجازی") ──────────────────────
 
-def virtual_country_kb(countries: list, page: int = 0) -> InlineKeyboardMarkup:
-    """Build a paginated keyboard listing countries for virtual number purchase.
+_SERVICE_EMOJIS: dict = {
+    "tg": "✈️",
+    "whatsapp": "💬",
+    "wa": "💬",
+    "instagram": "📸",
+    "ig": "📸",
+    "google": "🔍",
+    "apple": "🍏",
+    "tinder": "🔥",
+    "telegram": "✈️",
+}
 
-    Shows up to 20 countries per page with "قبلی/بعدی" navigation.
-    Uses the GLOBAL list index (into the full ``countries`` list) as the
-    country identifier, since the API doesn't return explicit country IDs.
+
+def virtual_service_kb(services: list) -> InlineKeyboardMarkup:
+    """Build a grid-style service (application) selection keyboard.
+
+    Each service becomes one button; 3 buttons per row on wide screens.
+    Clicking a service passes its ``service_id`` into the country menu.
     """
     builder = InlineKeyboardBuilder()
-    items_per_page = 20
-    start_idx = page * items_per_page
-    end_idx = start_idx + items_per_page
-    page_countries = countries[start_idx:end_idx]
-
-    for idx, c in enumerate(page_countries):
-        stock = "✅" if c.get("in_stock") else "❌"
-        price = c.get("final_price", c.get("price", 0))
-        price_str = f"{price:,}".replace(",", "،")
-        country_name = c.get("country", "نامشخص")
+    for app in services:
+        service_id = app.get("service_id")
+        if service_id is None:
+            continue
+        code = str(app.get("code", "")).lower()
+        title = app.get("title") or app.get("name") or code
+        emoji = _SERVICE_EMOJIS.get(code, _SERVICE_EMOJIS.get(title.lower(), "📱"))
         builder.button(
-            text=f"{stock} {country_name} — {price_str} تومان",
-            callback_data=f"virtual:select:{start_idx + idx}",
-            style="primary",
-            icon_custom_emoji_id=get_premium_id("key_lock"),
+            text=f"{emoji} {title}",
+            callback_data=f"v_service:{service_id}",
         )
-    builder.adjust(1)
+    builder.adjust(3)
 
-    nav_buttons = []
-    if page > 0:
-        nav_buttons.append(InlineKeyboardButton(
-            text="⬅️ قبلی",
-            callback_data=f"v_page:{page - 1}",
-        ))
-    if end_idx < len(countries):
-        nav_buttons.append(InlineKeyboardButton(
-            text="بعدی ➡️",
-            callback_data=f"v_page:{page + 1}",
-        ))
-    if nav_buttons:
-        builder.row(*nav_buttons)
+    if not services:
+        builder.button(
+            text="⚠️ سرویسی یافت نشد",
+            callback_data="ignore",
+        )
 
     builder.row(InlineKeyboardButton(
-        text="برگشت ↩️",
+        text="بازگشت به منو",
         callback_data="menu:back",
         style="primary",
         icon_custom_emoji_id=get_premium_id("down"),
     ))
+    return builder.as_markup()
+
+
+def virtual_country_kb(countries: list, service_id: int, page: int = 0) -> InlineKeyboardMarkup:
+    """Build a paginated, table-style keyboard for virtual number purchase.
+
+    Layout (exactly 10 countries per page):
+      Header:    [💰 قیمت] [📊 وضعیت] [🌍 نام کشور]   (callback_data="ignore")
+      Data rows: [price] [✅ موجود | ❌ ناموجود] [country]  ← ALL share the SAME
+                 callback_data ``v_buy:{service_id}:{country}`` so the user can
+                 tap anywhere on the row to buy. Out-of-stock rows are disabled.
+      Controls:  [🔍 فیلتر پیشرفته] [🔄 خرید گروهی]
+      Pagination:[⬅️ قبلی] [بعدی ➡️]   (only shown when applicable)
+      Footer:    [🔙 سرویس‌ها] → back to the application list
+    """
+    builder = InlineKeyboardBuilder()
+
+    # 1. Static header row
+    builder.row(
+        InlineKeyboardButton(text="💰 قیمت", callback_data="ignore"),
+        InlineKeyboardButton(text="📊 وضعیت", callback_data="ignore"),
+        InlineKeyboardButton(text="🌍 نام کشور", callback_data="ignore"),
+    )
+
+    # 2. Data rows (10 per page)
+    items_per_page = 10
+    start = page * items_per_page
+    end = start + items_per_page
+
+    for c in countries[start:end]:
+        status_text = "✅ موجود" if c["in_stock"] else "❌ ناموجود"
+        cb_data = f"v_buy:{service_id}:{c['country']}" if c["in_stock"] else "ignore"
+
+        price = c.get("final_price", c.get("price", 0))
+        country_name = c["country"][:15]
+
+        builder.row(
+            InlineKeyboardButton(text=f"{price:,}", callback_data=cb_data),
+            InlineKeyboardButton(text=status_text, callback_data=cb_data),
+            InlineKeyboardButton(text=country_name, callback_data=cb_data),
+        )
+
+    # 3. Controls row
+    builder.row(
+        InlineKeyboardButton(text="🔍 فیلتر پیشرفته", callback_data=f"v_filter:{service_id}"),
+        InlineKeyboardButton(text="🔄 خرید گروهی", callback_data=f"v_bulk:{service_id}"),
+    )
+
+    # 4. Pagination navigation
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton(text="⬅️ قبلی", callback_data=f"v_page:{service_id}:{page - 1}"))
+    if end < len(countries):
+        nav.append(InlineKeyboardButton(text="بعدی ➡️", callback_data=f"v_page:{service_id}:{page + 1}"))
+    if nav:
+        builder.row(*nav)
+
+    # 5. Footer — back to application list
+    builder.row(InlineKeyboardButton(
+        text="🔙 سرویس‌ها",
+        callback_data="menu:virtual_number",
+        style="primary",
+        icon_custom_emoji_id=get_premium_id("down"),
+    ))
+
     return builder.as_markup()
 
 

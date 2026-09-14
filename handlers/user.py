@@ -270,28 +270,65 @@ async def cb_menu_security(callback: CallbackQuery) -> None:
 # ─── Virtual Number (شماره مجازی) — New API ───────────────────────
 
 @router.callback_query(F.data == "menu:virtual_number")
-async def cb_menu_virtual_number(callback: CallbackQuery, state: FSMContext) -> None:
+async def cb_menu_virtual_number(callback: CallbackQuery) -> None:
+    """Show the application (service) selection menu."""
     try:
-        import logging
-        logging.getLogger(__name__).warning(">> VIRTUAL NUMBER BUTTON CLICKED <<")
+        from utils.ozvinoo import get_applications
+        from keyboards.inline import virtual_service_kb
 
-        from utils.ozvinoo import get_telegram_countries
+        await callback.message.edit_text("⏳ در حال دریافت لیست سرویس‌ها...")
+
+        services = await get_applications()
+
+        if not services:
+            await callback.message.edit_text(
+                "⚠️ خطا در ارتباط با سرور اوزوینو. لطفاً لاگ را بررسی کنید.",
+                reply_markup=back_to_menu_kb(),
+            )
+            return
+
+        await callback.message.edit_text(
+            "📱 <b>سرویس شماره مجازی</b>\n"
+            "اپلیکیشن مورد نظر خود را انتخاب کنید:",
+            reply_markup=virtual_service_kb(services),
+        )
+    except Exception as e:
+        logging.getLogger(__name__).error(f"CRASH IN SERVICE MENU: {e}", exc_info=True)
+        await callback.message.answer(f"خطای سیستمی: {e}")
+
+
+@router.callback_query(F.data.startswith("v_service:"))
+async def cb_virtual_service(callback: CallbackQuery, state: FSMContext) -> None:
+    """A service was selected — fetch its countries and show page 0."""
+    try:
+        service_id = int(callback.data.split(":")[1])
+
+        from utils.ozvinoo import get_countries
         from keyboards.inline import virtual_country_kb
+        from states.states import VirtualNumberStates
 
-        await callback.message.edit_text("⏳ در حال دریافت لیست کشورها از سرور...")
+        await callback.message.edit_text("⏳ در حال دریافت لیست کشورها...")
 
-        countries = await get_telegram_countries()
+        countries = await get_countries(service_id)
 
         if not countries:
-            await callback.message.edit_text("⚠️ خطا در ارتباط با سرور اوزوینو. لطفاً لاگ را بررسی کنید.")
+            await callback.message.edit_text(
+                "⚠️ خطا در ارتباط با سرور اوزوینو. لطفاً لاگ را بررسی کنید.",
+                reply_markup=back_to_menu_kb(),
+            )
             return
 
         await state.set_state(VirtualNumberStates.choose_country)
-        await state.update_data(virtual_countries=countries)
-        await callback.message.edit_text("🌐 لطفاً کشور مورد نظر خود را انتخاب کنید:", reply_markup=virtual_country_kb(countries, page=0))
+        await state.update_data(
+            virtual_service_id=service_id,
+            virtual_countries=countries,
+        )
+        await callback.message.edit_text(
+            "🌐 کشور مورد نظر خود را انتخاب کنید (برای خرید روی هر ستون بزنید):",
+            reply_markup=virtual_country_kb(countries, service_id, page=0),
+        )
     except Exception as e:
-        import logging
-        logging.getLogger(__name__).error(f"CRASH IN HANDLER: {e}", exc_info=True)
+        logging.getLogger(__name__).error(f"CRASH IN SERVICE HANDLER: {e}", exc_info=True)
         await callback.message.answer(f"خطای سیستمی: {e}")
 
 
@@ -299,47 +336,60 @@ async def cb_menu_virtual_number(callback: CallbackQuery, state: FSMContext) -> 
 async def cb_virtual_country_page(callback: CallbackQuery, state: FSMContext) -> None:
     """Flip between virtual-country pages using the FSM-cached list."""
     try:
-        page = int(callback.data.split(":")[1])
+        parts = callback.data.split(":")
+        service_id = int(parts[1])
+        page = int(parts[2])
 
         from keyboards.inline import virtual_country_kb
+        from utils.ozvinoo import get_countries
+
         data = await state.get_data()
         countries = data.get("virtual_countries")
 
-        if not countries:
-            from utils.ozvinoo import get_telegram_countries
-            countries = await get_telegram_countries()
-            await state.update_data(virtual_countries=countries)
+        # Refresh if the cached list belongs to a different service
+        if not countries or data.get("virtual_service_id") != service_id:
+            countries = await get_countries(service_id)
+            await state.update_data(
+                virtual_service_id=service_id,
+                virtual_countries=countries,
+            )
 
         if not countries:
             await callback.answer("⚠️ خطا در ارتباط با سرور اوزوینو.", show_alert=True)
             return
 
-        await callback.message.edit_reply_markup(reply_markup=virtual_country_kb(countries, page=page))
+        await callback.message.edit_reply_markup(
+            reply_markup=virtual_country_kb(countries, service_id, page=page)
+        )
         await callback.answer()
     except Exception as e:
-        import logging
         logging.getLogger(__name__).error(f"CRASH IN PAGINATION: {e}", exc_info=True)
         await callback.message.answer(f"خطای سیستمی: {e}")
 
 
-@router.callback_query(F.data.startswith("virtual:select:"), VirtualNumberStates.choose_country)
-async def cb_virtual_select_country(callback: CallbackQuery, state: FSMContext) -> None:
-    """User selected a country by index — show confirmation with price."""
+@router.callback_query(F.data.startswith("v_buy:"))
+async def cb_virtual_buy(callback: CallbackQuery, state: FSMContext) -> None:
+    """User tapped a country row — show confirmation with the final price."""
     await callback.answer()
-    country_index = int(callback.data.split(":")[2])
 
-    from utils.ozvinoo import get_telegram_countries
+    parts = callback.data.split(":")
+    service_id = int(parts[1])
+    country = ":".join(parts[2:])  # country may contain no ':'; kept safe
+
+    from utils.ozvinoo import get_countries
+    from keyboards.inline import back_to_menu_kb
+
     data = await state.get_data()
     countries = data.get("virtual_countries")
-    if not countries:
-        countries = await get_telegram_countries()
-        await state.update_data(virtual_countries=countries)
+    if not countries or data.get("virtual_service_id") != service_id:
+        countries = await get_countries(service_id)
+        await state.update_data(virtual_service_id=service_id, virtual_countries=countries)
 
-    if not countries or country_index < 0 or country_index >= len(countries):
+    selected = next((c for c in (countries or []) if c.get("country") == country), None)
+
+    if selected is None:
         await callback.answer("⚠️ کشور یافت نشد.", show_alert=True)
         return
-
-    selected = countries[country_index]
 
     if not selected.get("in_stock"):
         await callback.answer("⚠️ این کشور در حال حاضر موجود نیست.", show_alert=True)
@@ -350,8 +400,9 @@ async def cb_virtual_select_country(callback: CallbackQuery, state: FSMContext) 
     country_name = selected.get("country", "نامشخص")
 
     await state.update_data(
-        country_index=country_index,
+        virtual_service_id=service_id,
         country_name=country_name,
+        country_key=country,
         price_toman=final_price,
         base_price_toman=selected.get("base_price", final_price),
     )
@@ -365,7 +416,7 @@ async def cb_virtual_select_country(callback: CallbackQuery, state: FSMContext) 
                               style="success",
                               icon_custom_emoji_id=get_premium_id("check"))],
         [InlineKeyboardButton(text="انصراف",
-                              callback_data="menu:back",
+                              callback_data=f"v_service:{service_id}",
                               style="danger",
                               icon_custom_emoji_id=get_premium_id("cross"))],
     ])
@@ -376,7 +427,7 @@ async def cb_virtual_select_country(callback: CallbackQuery, state: FSMContext) 
             f"{get_pe('web')} کشور: <b>{country_name}</b>\n"
             f"{get_pe('money')} قیمت نهایی: <b>{price_str} تومان</b>\n\n"
             "پس از خرید، یک شماره مجازی دریافت خواهید کرد.\n"
-            "کد تأیید تلگرام ظرف چند دقیقه برای شما ارسال می‌شود.\n\n"
+            "کد تأیید ظرف چند دقیقه برای شما ارسال می‌شود.\n\n"
             "آیا مطمئن هستید؟",
             reply_markup=confirm_kb,
         )
@@ -388,7 +439,8 @@ async def cb_virtual_confirm_buy(callback: CallbackQuery, state: FSMContext) -> 
     """User confirmed — initiate Zarinpal payment for the virtual number."""
     await callback.answer()
     data = await state.get_data()
-    country_index = data.get("country_index")
+    service_id = data.get("virtual_service_id")
+    country = data.get("country_key")
     country_name = data.get("country_name", "نامشخص")
     price_toman = data.get("price_toman", 0)
 
@@ -416,7 +468,7 @@ async def cb_virtual_confirm_buy(callback: CallbackQuery, state: FSMContext) -> 
     order_id = await create_order(
         user_id=callback.from_user.id,
         product=f"شماره مجازی: {country_name}",
-        details=f"کشور: {country_name} | کشور index: {country_index}",
+        details=f"سرویس: {service_id} | کشور: {country}",
         amount_irt=final_irt,
     )
 
@@ -452,6 +504,18 @@ async def cb_virtual_confirm_buy(callback: CallbackQuery, state: FSMContext) -> 
             reply_markup=pay_link_kb(result.start_pay_url),
         )
     await callback.answer()
+
+
+@router.callback_query(F.data.startswith("v_filter:"))
+async def cb_virtual_filter(callback: CallbackQuery) -> None:
+    """Placeholder for the Advanced Filter feature."""
+    await callback.answer("فیلتر پیشرفته به زودی فعال می‌شود!", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("v_bulk:"))
+async def cb_virtual_bulk(callback: CallbackQuery) -> None:
+    """Placeholder for the Bulk Purchase feature."""
+    await callback.answer("خرید گروهی به زودی فعال می‌شود!", show_alert=True)
 
 
 # ─── Market Rates (Live Exchange Rates) ─────────────────────────────

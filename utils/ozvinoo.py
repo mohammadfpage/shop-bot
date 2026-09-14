@@ -4,7 +4,7 @@ Ozvinoo API service for virtual numbers (شماره مجازی).
 Base URL: https://api.ozvinoo.xyz/
 The provider strictly uses the V1 /web/{token}/... format for EVERYTHING:
 
-    GET /web/{token}/applications                  → app list; find Telegram (code == "tg")
+    GET /web/{token}/applications                  → app list (all services)
     GET /web/{token}/get-prices/{service_id}       → countries with base prices
     GET /web/{token}/getNumber/{service_id}/{country} → buy a virtual number
     GET /web/{token}/getCode/{request_id}          → fetch the SMS verification code
@@ -12,7 +12,9 @@ The provider strictly uses the V1 /web/{token}/... format for EVERYTHING:
 
 Dynamic Profit Margin:
     Final_Price = Base_Price + (Base_Price × (Margin / 100))
-    Margin is fetched from config.ACCOUNT_PROFIT_MARGIN_PERCENT (default 30%).
+    Margin is fetched live from the ``settings`` table
+    (key ``account_profit_margin``) so admin changes apply immediately.
+    Falls back to config.ACCOUNT_PROFIT_MARGIN_PERCENT (default 30%) if unset.
 """
 
 import json
@@ -38,13 +40,31 @@ def _is_cache_valid() -> bool:
     return (time.time() - _cache_ts) < _CACHE_TTL
 
 
+def _parse_in_stock(count) -> bool:
+    """Parse the ``count`` field into a boolean stock flag.
+
+    Supports both numeric counts (0 → out of stock) and Persian/English
+    presence words returned by some providers.
+    """
+    if count is None:
+        return True
+    s = str(count).strip().replace(",", "").replace("،", "")
+    if not s:
+        return True
+    try:
+        return int(float(s)) > 0
+    except ValueError:
+        low = s.lower()
+        return ("موجود" in s) or ("available" in low) or (s not in ("", "0", "ناموجود", "unavailable"))
+
+
 # ══════════════════════════════════════════════════════════════════════
 #  VIRTUAL NUMBERS (V1 /web/{token}/ API — "شماره مجازی")
 # ══════════════════════════════════════════════════════════════════════
 
 async def get_panel_balance() -> int:
     """Fetch the Ozvinoo panel balance.
-    
+
     Returns the balance as an integer, or 0 if the request fails.
     """
     url = f"https://api.ozvinoo.xyz/web/{TOKEN}/get-balance"
@@ -62,8 +82,57 @@ async def get_panel_balance() -> int:
         return 0
 
 
-async def get_telegram_countries() -> Optional[list[dict]]:
-    """Fetch Telegram countries and apply the profit margin.
+async def get_applications() -> Optional[list[dict]]:
+    """Fetch all available services (applications) from the Ozvinoo API.
+
+    Returns:
+        List of dicts: {"id", "code", "title", "name", ...} or ``None``.
+    """
+    try:
+        async with aiohttp.ClientSession() as session:
+            url = f"https://api.ozvinoo.xyz/web/{TOKEN}/applications"
+            async with session.get(url) as resp:
+                raw = await resp.text()
+                logger.warning(f"RAW APPLICATIONS RESPONSE: {raw[:1000]}")
+                data = json.loads(raw)
+
+        if isinstance(data, dict):
+            apps = [app for app in data.values() if isinstance(app, dict)]
+        elif isinstance(data, list):
+            apps = [app for app in data if isinstance(app, dict)]
+        else:
+            return None
+
+        app_list = []
+        for app in apps:
+            service_id = app.get("id")
+            code = app.get("code", "نامشخص")
+            title = app.get("title") or app.get("name") or code
+            app_list.append({
+                "service_id": service_id,
+                "code": code,
+                "name": code,
+                "title": title,
+            })
+        return app_list or None
+    except Exception as exc:
+        logger.error(f"FATAL ERROR in get_applications: {exc}", exc_info=True)
+        return None
+
+
+async def _resolve_service_id(code: str = "tg") -> Optional[int]:
+    """Resolve a service id by its app ``code`` (e.g. 'tg' → Telegram)."""
+    apps = await get_applications()
+    if not apps:
+        return None
+    for app in apps:
+        if str(app.get("code", "")).lower() == code.lower():
+            return app.get("service_id")
+    return apps[0]["service_id"] if apps else None
+
+
+async def get_countries(service_id: int) -> Optional[list[dict]]:
+    """Fetch countries for a service and apply the live profit margin.
 
     STRICT ERROR HANDLING build:
       * Every HTTP response is read as RAW TEXT and logged BEFORE parsing,
@@ -78,44 +147,43 @@ async def get_telegram_countries() -> Optional[list[dict]]:
                         "final_price", "in_stock"} or ``None`` on failure.
     """
     try:
+        # Dynamic profit margin — live from DB, fallback to config.
+        from database.db import get_profit_margin
+        margin = await get_profit_margin(config.ACCOUNT_PROFIT_MARGIN_PERCENT) / 100
+
         async with aiohttp.ClientSession() as session:
-            url_apps = f"https://api.ozvinoo.xyz/web/{TOKEN}/applications"
-            async with session.get(url_apps) as resp:
-                raw_apps = await resp.text()
-                logger.warning(f"RAW APPS RESPONSE: {raw_apps}")
-                data = json.loads(raw_apps)
-
-            service_id = 1  # Fallback ID
-            if isinstance(data, dict):
-                for key, app in data.items():
-                    if isinstance(app, dict) and app.get("code") == "tg":
-                        service_id = app.get("id")
-                        break
-
             url_prices = f"https://api.ozvinoo.xyz/web/{TOKEN}/get-prices/{service_id}"
             async with session.get(url_prices) as resp:
                 raw_prices = await resp.text()
-                logger.warning(f"RAW PRICES RESPONSE: {raw_prices}")
+                logger.warning(f"RAW PRICES RESPONSE: {raw_prices[:1000]}")
                 countries_data = json.loads(raw_prices)
 
-            result = []
-            margin = config.ACCOUNT_PROFIT_MARGIN_PERCENT / 100
-            if isinstance(countries_data, list):
-                for item in countries_data:
-                    if not isinstance(item, dict):
-                        continue
-                    base_price = int(item.get("price", 0))
-                    result.append({
-                        "country": item.get("country", "نامشخص"),
-                        "service_id": service_id,
-                        "base_price": base_price,
-                        "final_price": int(base_price + (base_price * margin)),
-                        "in_stock": "موجود" in str(item.get("count", "")),
-                    })
-            return result
+        result = []
+        if isinstance(countries_data, list):
+            for item in countries_data:
+                if not isinstance(item, dict):
+                    continue
+                base_price = int(item.get("price", 0))
+                result.append({
+                    "country": item.get("country", "نامشخص"),
+                    "service_id": service_id,
+                    "base_price": base_price,
+                    "final_price": int(base_price + (base_price * margin)),
+                    "in_stock": _parse_in_stock(item.get("count")),
+                })
+        return result
     except Exception as exc:
-        logger.error(f"FATAL ERROR in get_telegram_countries: {exc}", exc_info=True)
+        logger.error(f"FATAL ERROR in get_countries: {exc}", exc_info=True)
         return None
+
+
+async def get_telegram_countries() -> Optional[list[dict]]:
+    """Backwards-compatible wrapper: resolve Telegram's service id, then
+    return its countries with the live profit margin applied."""
+    service_id = await _resolve_service_id("tg")
+    if service_id is None:
+        return None
+    return await get_countries(service_id)
 
 
 async def buy_virtual_number(service_id: int, country: str) -> Optional[dict]:

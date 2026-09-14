@@ -119,30 +119,22 @@ async def _deliver_virtual_number(
     import asyncio
     from utils.ozvinoo import buy_virtual_number, get_number_code
 
-    # Parse country_index from details
-    country_index = -1
-    if "کشور index:" in details:
+    # Parse service_id and country from details ("سرویس: N | کشور: name")
+    service_id = None
+    country = None
+    if "سرویس:" in details and "|" in details:
         try:
-            country_index = int(details.split("کشور index:")[1].strip())
+            service_part = details.split("|")[0].split("سرویس:")[1].strip()
+            country_part = details.split("|")[1].split("کشور:")[1].strip()
+            service_id = int(service_part)
+            country = country_part
         except (ValueError, IndexError):
             pass
 
-    if country_index < 0:
+    if service_id is None or not country:
         await _alert_delivery_failure(bot, user_id, order_id, product,
-                                      "شناسه کشور یافت نشد")
+                                      "شناسه سرویس یا کشور یافت نشد")
         return
-
-    # Resolve country_index to country_id using the API
-    from utils.ozvinoo import get_telegram_countries
-    countries = await get_telegram_countries()
-    if not countries or country_index >= len(countries):
-        await _alert_delivery_failure(bot, user_id, order_id, product,
-                                      "کشور یافت نشد")
-        return
-
-    selected_country = countries[country_index]
-    service_id = selected_country.get("service_id")
-    country = selected_country.get("country", "")
 
     # Step 1: Purchase the number from Ozvinoo
     result = await buy_virtual_number(service_id, country)

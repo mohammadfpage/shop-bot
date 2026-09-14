@@ -495,7 +495,8 @@ async def cb_admin_finance(callback: CallbackQuery) -> None:
 async def cb_admin_account_margin(callback: CallbackQuery, state: FSMContext) -> None:
     """Show current account profit margin and allow admin to change it."""
     await callback.answer()
-    current_margin = config.ACCOUNT_PROFIT_MARGIN_PERCENT
+    from database.db import get_profit_margin
+    current_margin = await get_profit_margin(config.ACCOUNT_PROFIT_MARGIN_PERCENT)
     await state.set_state(AccountMarginState.waiting_for_margin)
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
@@ -511,7 +512,7 @@ async def cb_admin_account_margin(callback: CallbackQuery, state: FSMContext) ->
 
 @router.message(AccountMarginState.waiting_for_margin)
 async def msg_account_margin_input(message: Message, state: FSMContext) -> None:
-    """Receive new account profit margin value and update config."""
+    """Receive new account profit margin value and persist it to the DB."""
     if not await IsAdmin()(message):
         return
 
@@ -524,7 +525,11 @@ async def msg_account_margin_input(message: Message, state: FSMContext) -> None:
         await message.answer(f"{get_pe('warning')} لطفاً عددی بین ۰ تا ۵۰۰ ارسال کنید.")
         return
 
-    # Update the in-memory config
+    # Persist to DB so it applies immediately (and survives restarts)
+    from database.db import set_profit_margin
+    await set_profit_margin(new_margin)
+
+    # Keep the in-memory value in sync for any code reading config directly
     config.ACCOUNT_PROFIT_MARGIN_PERCENT = new_margin
     await state.clear()
 

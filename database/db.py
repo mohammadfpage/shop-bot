@@ -7,6 +7,7 @@ Tables:
     payments        – Zarinpal transaction records
     product_prices  – admin-managed base USD prices per product
     tickets         – support tickets
+    settings        – key/value admin settings (e.g. profit margin)
 """
 
 import logging
@@ -99,6 +100,11 @@ async def init_db() -> None:
                 created_at  TEXT,
                 replied_at  TEXT
             );
+
+            CREATE TABLE IF NOT EXISTS settings (
+                setting_key  TEXT PRIMARY KEY,
+                setting_value TEXT
+            );
         """)
 
         # Seed default prices if table is empty
@@ -157,6 +163,60 @@ async def get_price_or_default(product_key: str) -> float:
     if price is not None:
         return price
     return config.PRICES.get(product_key, 0.0)
+
+
+# ─── Settings helpers (key/value admin settings) ─────────────────────
+
+async def get_setting(setting_key: str, default: Optional[str] = None) -> Optional[str]:
+    """Return a setting value from the ``settings`` table, or *default*.
+
+    Falls back to *default* if the table is missing or the key is absent,
+    so callers are never broken by an uninitialized schema.
+    """
+    try:
+        pool = await get_pool()
+        row = await pool.fetchrow(
+            "SELECT setting_value FROM settings WHERE setting_key = $1",
+            setting_key,
+        )
+        return row["setting_value"] if row else default
+    except Exception:
+        logger.warning("get_setting(%s) failed; using default.", setting_key)
+        return default
+
+
+async def set_setting(setting_key: str, setting_value: str) -> None:
+    """Upsert a setting into the ``settings`` table."""
+    try:
+        pool = await get_pool()
+        await pool.execute(
+            """
+            INSERT INTO settings (setting_key, setting_value)
+            VALUES ($1, $2)
+            ON CONFLICT (setting_key) DO UPDATE SET setting_value = $2
+            """,
+            setting_key, setting_value,
+        )
+    except Exception:
+        logger.warning("set_setting(%s) failed.", setting_key)
+
+
+async def get_profit_margin(default: float) -> float:
+    """Return the admin-configured profit margin (percent).
+
+    Source of truth is the ``settings`` table (key ``account_profit_margin``).
+    If it is not set, falls back to *default* (usually config value).
+    """
+    value = await get_setting("account_profit_margin", str(default))
+    try:
+        return max(0.0, float(value))
+    except (TypeError, ValueError):
+        return default
+
+
+async def set_profit_margin(margin: float) -> None:
+    """Persist the account profit margin (percent) to the settings table."""
+    await set_setting("account_profit_margin", str(margin))
 
 
 # ─── User helpers ────────────────────────────────────────────────────
