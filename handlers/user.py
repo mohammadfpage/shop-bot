@@ -269,36 +269,27 @@ async def cb_menu_security(callback: CallbackQuery) -> None:
 # ─── Virtual Number (شماره مجازی) — New API ───────────────────────
 
 @router.callback_query(F.data == "menu:virtual_number")
-async def cb_menu_virtual_number(callback: CallbackQuery) -> None:
-    import logging
-    logging.getLogger(__name__).warning(">> VIRTUAL NUMBER BUTTON CLICKED <<")
-
-    from utils.ozvinoo import get_telegram_countries
-    from keyboards.inline import virtual_country_kb
-
+async def cb_menu_virtual_number(callback: CallbackQuery, state: FSMContext) -> None:
     try:
+        import logging
+        logging.getLogger(__name__).warning(">> VIRTUAL NUMBER BUTTON CLICKED <<")
+
+        from utils.ozvinoo import get_telegram_countries
+        from keyboards.inline import virtual_country_kb
+
+        await callback.message.edit_text("⏳ در حال دریافت لیست کشورها از سرور...")
+
         countries = await get_telegram_countries()
-    except Exception as exc:
-        logger.error("Failed to fetch virtual number countries: %s", exc)
-        countries = []
 
-    if not countries:
-        with contextlib.suppress(TelegramBadRequest):
-            await callback.message.edit_text(
-                f"{get_pe('warning')} خطا در ارتباط با سرور اوزوینو. لطفا بعدا تلاش کنید.",
-                reply_markup=back_to_menu_kb(),
-            )
-        await callback.answer()
-        return
+        if not countries:
+            await callback.message.edit_text("⚠️ خطا در ارتباط با سرور اوزوینو. لطفاً لاگ را بررسی کنید.")
+            return
 
-    with contextlib.suppress(TelegramBadRequest):
-        await callback.message.edit_text(
-            f"{get_pe('key_lock')} <b>خرید شماره مجازی</b>\n\n"
-            "یک کشور را برای دریافت شماره مجازی انتخاب کنید:\n"
-            "<i>قیمت‌ها شامل حاشیه سود هستند.</i>",
-            reply_markup=virtual_country_kb(countries),
-        )
-    await callback.answer()
+        await callback.message.edit_text("🌐 لطفاً کشور مورد نظر خود را انتخاب کنید:", reply_markup=virtual_country_kb(countries))
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"CRASH IN HANDLER: {e}", exc_info=True)
+        await callback.message.answer(f"خطای سیستمی: {e}")
 
 
 @router.callback_query(F.data.startswith("virtual:select:"), VirtualNumberStates.choose_country)

@@ -135,7 +135,7 @@ async def _deliver_virtual_number(
     # Resolve country_index to country_id using the API
     from utils.ozvinoo import get_telegram_countries
     countries = await get_telegram_countries()
-    if country_index >= len(countries):
+    if not countries or country_index >= len(countries):
         await _alert_delivery_failure(bot, user_id, order_id, product,
                                       "کشور یافت نشد")
         return

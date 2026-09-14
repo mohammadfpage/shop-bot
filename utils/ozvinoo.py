@@ -14,6 +14,7 @@ Dynamic Profit Margin:
     Margin is fetched from config.ACCOUNT_PROFIT_MARGIN_PERCENT (default 30%).
 """
 
+import json
 import logging
 import time
 from typing import Optional
@@ -40,38 +41,41 @@ def _is_cache_valid() -> bool:
 #  VIRTUAL NUMBERS (V1 /web/{token}/ API — "شماره مجازی")
 # ══════════════════════════════════════════════════════════════════════
 
-async def get_telegram_countries() -> list[dict]:
+async def get_telegram_countries() -> Optional[list[dict]]:
     """Fetch Telegram countries and apply the profit margin.
 
-    Step A: Resolve the Telegram service ID from /applications
-    (fallback to 1). Step B: Load prices from /get-prices/{service_id}
-    and mark up every base price by config.ACCOUNT_PROFIT_MARGIN_PERCENT.
+    STRICT ERROR HANDLING build:
+      * Every HTTP response is read as RAW TEXT and logged BEFORE parsing,
+        so a non-JSON body (e.g. an HTML error page that would make
+        ``resp.json()`` raise ``aiohttp.ContentTypeError``) is visible in
+        the logs instead of crashing silently.
+      * Any exception is logged with the full traceback (``exc_info=True``)
+        and turned into a ``None`` return so the caller can react.
 
     Returns:
         List of dicts: {"country", "service_id", "base_price",
-                        "final_price", "in_stock"}.
+                        "final_price", "in_stock"} or ``None`` on failure.
     """
-    if _cache.get("tg_countries") and _is_cache_valid():
-        return _cache["tg_countries"]
+    try:
+        async with aiohttp.ClientSession() as session:
+            url_apps = f"https://api.ozvinoo.xyz/web/{TOKEN}/applications"
+            async with session.get(url_apps) as resp:
+                raw_apps = await resp.text()
+                logger.warning(f"RAW APPS RESPONSE: {raw_apps}")
+                data = json.loads(raw_apps)
 
-    async with aiohttp.ClientSession() as session:
-        # Step A: Get service ID for Telegram
-        service_id = 1  # Fallback ID
-        async with session.get(
-            f"https://api.ozvinoo.xyz/web/{TOKEN}/applications"
-        ) as resp:
-            data = await resp.json()
+            service_id = 1  # Fallback ID
             if isinstance(data, dict):
                 for key, app in data.items():
                     if isinstance(app, dict) and app.get("code") == "tg":
                         service_id = app.get("id")
                         break
 
-        # Step B: Get countries and apply margin
-        async with session.get(
-            f"https://api.ozvinoo.xyz/web/{TOKEN}/get-prices/{service_id}"
-        ) as resp:
-            countries_data = await resp.json()
+            url_prices = f"https://api.ozvinoo.xyz/web/{TOKEN}/get-prices/{service_id}"
+            async with session.get(url_prices) as resp:
+                raw_prices = await resp.text()
+                logger.warning(f"RAW PRICES RESPONSE: {raw_prices}")
+                countries_data = json.loads(raw_prices)
 
             result = []
             margin = config.ACCOUNT_PROFIT_MARGIN_PERCENT / 100
@@ -80,21 +84,17 @@ async def get_telegram_countries() -> list[dict]:
                     if not isinstance(item, dict):
                         continue
                     base_price = int(item.get("price", 0))
-                    final_price = int(base_price + (base_price * margin))
                     result.append({
                         "country": item.get("country", "نامشخص"),
                         "service_id": service_id,
                         "base_price": base_price,
-                        "final_price": final_price,
+                        "final_price": int(base_price + (base_price * margin)),
                         "in_stock": "موجود" in str(item.get("count", "")),
                     })
-
-    if result:
-        _cache["tg_countries"] = result
-        global _cache_ts
-        _cache_ts = time.time()
-
-    return result
+            return result
+    except Exception as exc:
+        logger.error(f"FATAL ERROR in get_telegram_countries: {exc}", exc_info=True)
+        return None
 
 
 async def buy_virtual_number(service_id: int, country: str) -> Optional[dict]:
