@@ -273,11 +273,11 @@ async def cb_menu_virtual_number(callback: CallbackQuery) -> None:
     import logging
     logging.getLogger(__name__).warning(">> VIRTUAL NUMBER BUTTON CLICKED <<")
 
-    from utils.ozvinoo import get_virtual_number_countries
+    from utils.ozvinoo import get_telegram_countries
     from keyboards.inline import virtual_country_kb
 
     try:
-        countries = await get_virtual_number_countries()
+        countries = await get_telegram_countries()
     except Exception as exc:
         logger.error("Failed to fetch virtual number countries: %s", exc)
         countries = []
@@ -307,8 +307,8 @@ async def cb_virtual_select_country(callback: CallbackQuery, state: FSMContext) 
     await callback.answer()
     country_index = int(callback.data.split(":")[2])
 
-    from utils.ozvinoo import get_virtual_number_countries
-    countries = await get_virtual_number_countries()
+    from utils.ozvinoo import get_telegram_countries
+    countries = await get_telegram_countries()
 
     if country_index < 0 or country_index >= len(countries):
         await callback.answer("⚠️ کشور یافت نشد.", show_alert=True)

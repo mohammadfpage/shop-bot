@@ -133,31 +133,27 @@ async def _deliver_virtual_number(
         return
 
     # Resolve country_index to country_id using the API
-    from utils.ozvinoo import get_virtual_number_countries
-    countries = await get_virtual_number_countries()
+    from utils.ozvinoo import get_telegram_countries
+    countries = await get_telegram_countries()
     if country_index >= len(countries):
         await _alert_delivery_failure(bot, user_id, order_id, product,
                                       "کشور یافت نشد")
         return
 
     selected_country = countries[country_index]
-    # The API uses the country list position; we need the actual API identifier
-    # For the new API, the country name is used as the identifier
-    country_name = selected_country.get("country", "")
-    # Extract just the name without emoji for the API call
-    country_id_for_api = country_index  # Use index as the API identifier
+    service_id = selected_country.get("service_id")
+    country = selected_country.get("country", "")
 
     # Step 1: Purchase the number from Ozvinoo
-    result = await buy_virtual_number(country_id_for_api)
+    result = await buy_virtual_number(service_id, country)
 
-    if not result or not result.get("success"):
-        error_msg = result.get("error_msg", "خطای ناشناخته") if result else "خطا در اتصال"
+    if not result or result.get("error_code"):
+        error_msg = result.get("error_code", "خطای ناشناخته") if result else "خطا در اتصال"
         await _alert_delivery_failure(bot, user_id, order_id, product, error_msg)
         return
 
-    ozvinoo_order_id = result.get("order_id", 0)
+    request_id = result.get("request_id", 0)
     number = result.get("number", "نامشخص")
-    country = result.get("country", "نامشخص")
 
     # Step 2: Send the number to the user
     await _safe_send(
@@ -175,16 +171,16 @@ async def _deliver_virtual_number(
     code = None
     for attempt in range(24):  # 24 × 5s = 120s
         await asyncio.sleep(5)
-        code_result = await get_number_code(ozvinoo_order_id)
+        code_result = await get_number_code(request_id)
 
-        if code_result and code_result.get("is_ready"):
+        if code_result and code_result.get("code"):
             code = code_result.get("code", "")
             break
 
         if code_result and code_result.get("error_code") not in ("wait_code", ""):
             # Non-retryable error
             await _alert_delivery_failure(bot, user_id, order_id, product,
-                                          code_result.get("error_msg", "خطا"))
+                                          code_result.get("error_code", "خطا"))
             return
 
     if code:
@@ -202,7 +198,7 @@ async def _deliver_virtual_number(
         await _alert_delivery_failure(
             bot, user_id, order_id, product,
             "کد تأیید ظرف ۲ دقیقه دریافت نشد",
-            extra_info=f"شماره: {number}\nشناسه سفارش Ozvinoo: {ozvinoo_order_id}",
+            extra_info=f"شماره: {number}\nشناسه سفارش Ozvinoo: {request_id}",
         )
 
 
