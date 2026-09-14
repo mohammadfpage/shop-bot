@@ -410,25 +410,46 @@ def pay_link_kb(pay_url: str) -> InlineKeyboardMarkup:
 
 # ─── Virtual Number (New API — "شماره مجازی") ──────────────────────
 
-def virtual_country_kb(countries: list) -> InlineKeyboardMarkup:
-    """Build a keyboard listing countries for virtual number purchase.
+def virtual_country_kb(countries: list, page: int = 0) -> InlineKeyboardMarkup:
+    """Build a paginated keyboard listing countries for virtual number purchase.
 
-    Uses list index as the country identifier since the API doesn't
-    return explicit country IDs.
+    Shows up to 20 countries per page with "قبلی/بعدی" navigation.
+    Uses the GLOBAL list index (into the full ``countries`` list) as the
+    country identifier, since the API doesn't return explicit country IDs.
     """
     builder = InlineKeyboardBuilder()
-    for idx, c in enumerate(countries):
+    items_per_page = 20
+    start_idx = page * items_per_page
+    end_idx = start_idx + items_per_page
+    page_countries = countries[start_idx:end_idx]
+
+    for idx, c in enumerate(page_countries):
         stock = "✅" if c.get("in_stock") else "❌"
         price = c.get("final_price", c.get("price", 0))
         price_str = f"{price:,}".replace(",", "،")
         country_name = c.get("country", "نامشخص")
         builder.button(
             text=f"{stock} {country_name} — {price_str} تومان",
-            callback_data=f"virtual:select:{idx}",
+            callback_data=f"virtual:select:{start_idx + idx}",
             style="primary",
             icon_custom_emoji_id=get_premium_id("key_lock"),
         )
     builder.adjust(1)
+
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton(
+            text="⬅️ قبلی",
+            callback_data=f"v_page:{page - 1}",
+        ))
+    if end_idx < len(countries):
+        nav_buttons.append(InlineKeyboardButton(
+            text="بعدی ➡️",
+            callback_data=f"v_page:{page + 1}",
+        ))
+    if nav_buttons:
+        builder.row(*nav_buttons)
+
     builder.row(InlineKeyboardButton(
         text="برگشت ↩️",
         callback_data="menu:back",

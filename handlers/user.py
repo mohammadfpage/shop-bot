@@ -285,10 +285,39 @@ async def cb_menu_virtual_number(callback: CallbackQuery, state: FSMContext) -> 
             await callback.message.edit_text("⚠️ خطا در ارتباط با سرور اوزوینو. لطفاً لاگ را بررسی کنید.")
             return
 
-        await callback.message.edit_text("🌐 لطفاً کشور مورد نظر خود را انتخاب کنید:", reply_markup=virtual_country_kb(countries))
+        await state.set_state(VirtualNumberStates.choose_country)
+        await state.update_data(virtual_countries=countries)
+        await callback.message.edit_text("🌐 لطفاً کشور مورد نظر خود را انتخاب کنید:", reply_markup=virtual_country_kb(countries, page=0))
     except Exception as e:
         import logging
         logging.getLogger(__name__).error(f"CRASH IN HANDLER: {e}", exc_info=True)
+        await callback.message.answer(f"خطای سیستمی: {e}")
+
+
+@router.callback_query(F.data.startswith("v_page:"))
+async def cb_virtual_country_page(callback: CallbackQuery, state: FSMContext) -> None:
+    """Flip between virtual-country pages using the FSM-cached list."""
+    try:
+        page = int(callback.data.split(":")[1])
+
+        from keyboards.inline import virtual_country_kb
+        data = await state.get_data()
+        countries = data.get("virtual_countries")
+
+        if not countries:
+            from utils.ozvinoo import get_telegram_countries
+            countries = await get_telegram_countries()
+            await state.update_data(virtual_countries=countries)
+
+        if not countries:
+            await callback.answer("⚠️ خطا در ارتباط با سرور اوزوینو.", show_alert=True)
+            return
+
+        await callback.message.edit_reply_markup(reply_markup=virtual_country_kb(countries, page=page))
+        await callback.answer()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"CRASH IN PAGINATION: {e}", exc_info=True)
         await callback.message.answer(f"خطای سیستمی: {e}")
 
 
@@ -299,9 +328,13 @@ async def cb_virtual_select_country(callback: CallbackQuery, state: FSMContext) 
     country_index = int(callback.data.split(":")[2])
 
     from utils.ozvinoo import get_telegram_countries
-    countries = await get_telegram_countries()
+    data = await state.get_data()
+    countries = data.get("virtual_countries")
+    if not countries:
+        countries = await get_telegram_countries()
+        await state.update_data(virtual_countries=countries)
 
-    if country_index < 0 or country_index >= len(countries):
+    if not countries or country_index < 0 or country_index >= len(countries):
         await callback.answer("⚠️ کشور یافت نشد.", show_alert=True)
         return
 
