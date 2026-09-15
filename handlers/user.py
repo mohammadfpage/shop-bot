@@ -19,7 +19,7 @@ from keyboards.inline import (
     market_rates_refresh_kb,
     welcome_inline_kb,
 )
-from keyboards.reply import main_reply_kb
+from keyboards.reply import main_reply_kb, virtual_services_reply_kb, VIRTUAL_SERVICES_MAP
 from keyboards.admin_reply import admin_reply_kb
 from keyboards.callback_data import WelcomeCallback
 from filters import IsAdmin
@@ -271,19 +271,14 @@ async def cb_menu_security(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "menu:virtual_number")
 async def cb_menu_virtual_number(callback: CallbackQuery) -> None:
-    """Show the application-selection menu with dynamic app list from API."""
+    """Show the ReplyKeyboard for virtual-number service selection."""
     try:
-        from utils.ozvinoo import get_applications_list
-        from keyboards.inline import virtual_services_kb
-
-        apps_data = await get_applications_list()
         text = (
-            "\U0001f6cd\ufe0f <b>خرید شماره مجازی</b>\n\n"
-            "\U0001f4c8 جهت خرید شماره مجازی لطفا نوع سرویس و پلتفرم مدنظر خود را "
+            "📈 جهت خرید شماره مجازی لطفا نوع سرویس و پلتفرم مدنظر خود را "
             "از کیبورد پایین انتخاب نمایید؛"
         )
-        with contextlib.suppress(TelegramBadRequest):
-            await callback.message.edit_text(text, reply_markup=virtual_services_kb(apps_data))
+        # Send a new message with the reply keyboard (reply keyboards can't be edited in)
+        await callback.message.answer(text, reply_markup=virtual_services_reply_kb())
     except Exception as e:
         logger.error(f"CRASH IN MENU VIRTUAL: {e}", exc_info=True)
         with contextlib.suppress(TelegramBadRequest):
@@ -294,9 +289,68 @@ async def cb_menu_virtual_number(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
+@router.message(F.text.in_(VIRTUAL_SERVICES_MAP.keys()))
+async def process_service_selection(message: Message, state: FSMContext) -> None:
+    """Handle a service tapped from the ReplyKeyboard.
+
+    Maps the button text to a numeric service_id, fetches countries
+    via the Ozvinoo API, and displays them in an InlineKeyboardMarkup.
+    """
+    service_id = VIRTUAL_SERVICES_MAP[message.text]
+    await message.answer("⏳ در حال دریافت لیست کشورها...")
+
+    from utils.ozvinoo import get_telegram_countries
+    countries = await get_telegram_countries(service_id)
+
+    if not countries:
+        await message.answer(
+            "⚠️ در حال حاضر شماره‌ای برای این سرویس موجود نیست.\n"
+            "لطفاً بعداً دوباره تلاش کنید.",
+            reply_markup=virtual_services_reply_kb(),
+        )
+        return
+
+    await state.set_state(VirtualNumberStates.choose_country)
+    await state.update_data(
+        virtual_service_id=service_id,
+        virtual_countries=countries,
+    )
+
+    from keyboards.inline import virtual_country_kb
+
+    sid_str = str(service_id)
+    if sid_str == "1":
+        text = (
+            f"💎 سرویس تلگرام انتخاب شد\n"
+            f"👉 جهت خرید شماره مجازی روی نام کشور مورد نظر خود کلیک نمایید:\n\n"
+            f"❗️ توجه داشته باشید تمامی شماره ها برای راحتی شما از قبل بر روی تلگرام ثبت نام شده اند، "
+            f"کشورهایی که با 🌟 مشخص شده اند خام میباشند!"
+        )
+    else:
+        text = (
+            f"🌐 سرویس {message.text} انتخاب شد.\n"
+            "👉 جهت خرید شماره مجازی روی نام کشور مورد نظر خود کلیک نمایید:"
+        )
+
+    await message.answer(text, reply_markup=virtual_country_kb(countries, service_id, 0))
+
+
+@router.message(F.text == "🔙 بازگشت")
+async def reply_btn_virtual_back(message: Message, state: FSMContext) -> None:
+    """Handle the Back button from the virtual-services reply keyboard.
+
+    Returns to the main reply keyboard.
+    """
+    await state.clear()
+    await message.answer(
+        f"{get_pe('home')} <b>منوی اصلی</b>",
+        reply_markup=main_reply_kb(),
+    )
+
+
 @router.callback_query(F.data.startswith("v_app:"))
 async def cb_app_selected(callback: CallbackQuery, state: FSMContext) -> None:
-    """An app was selected — fetch its countries and show the table (page 0)."""
+    """An app was selected via inline toggle — fetch its countries and show the table (page 0)."""
     try:
         service_id = callback.data.split(":", 1)[1]
 
