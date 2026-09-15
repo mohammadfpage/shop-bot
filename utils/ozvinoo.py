@@ -124,10 +124,71 @@ async def get_telegram_countries(service_id) -> Optional[list[dict]]:
     """Fetch countries for a given service and apply the live profit margin.
 
     ``service_id`` may be a numeric id (e.g. 1) or a provider code
-    (e.g. "tg", "change", "imo") — it is injected into the
-    ``/web/{token}/get-prices/{service_id}`` URL.
+    (e.g. "tg", "change", "imo", "tg_noreport") — it is injected into the
+    appropriate API URL.
+
+    For ``tg_noreport`` (non-report Telegram numbers), a special V2 API
+    endpoint is used instead of the standard V1 get-prices path.
     """
+    if service_id == "tg_noreport":
+        return await get_tg_noreport_countries()
     return await get_countries(service_id)
+
+
+async def get_tg_noreport_countries() -> Optional[list[dict]]:
+    """Fetch non-report Telegram numbers using the V2 API endpoint.
+
+    Uses: POST https://api.ozvinoo.xyz/telegram-numbers/numbers/
+    with Bearer token and ``none_report: True`` JSON body.
+
+    Note: ``aiohttp`` does not support ``json=`` on ``.get()``,
+    so we use ``.post()`` which does.
+    """
+    try:
+        from database.db import get_profit_margin
+        margin = await get_profit_margin(config.ACCOUNT_PROFIT_MARGIN_PERCENT) / 100
+
+        url = "https://api.ozvinoo.xyz/telegram-numbers/numbers/"
+        headers = {
+            "Authorization": f"Bearer {TOKEN}",
+            "Content-Type": "application/json",
+        }
+        payload = {"none_report": True}
+
+        timeout = aiohttp.ClientTimeout(total=15)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            # POST is required here — aiohttp .get() does not accept json=
+            async with session.post(url, headers=headers, json=payload) as resp:
+                raw = await resp.text()
+                logger.warning(f"RAW TG NOREPORT RESPONSE [{resp.status}]: {raw[:1000]}")
+                if resp.status != 200:
+                    logger.error(f"V2 API returned HTTP {resp.status}: {raw[:500]}")
+                    return None
+                data = json.loads(raw)
+
+        result = []
+        if data.get("status") and "data" in data:
+            for item in data["data"]:
+                if not isinstance(item, dict):
+                    continue
+                price = int(item.get("price", 0))
+                stock_raw = item.get("count", "")
+                if isinstance(stock_raw, bool):
+                    in_stock = stock_raw
+                else:
+                    in_stock = _parse_in_stock(stock_raw)
+
+                result.append({
+                    "country": item.get("country", "نامشخص"),
+                    "range": str(item.get("range", "1")),
+                    "base_price": price,
+                    "final_price": int(price + (price * margin)),
+                    "in_stock": in_stock,
+                })
+        return result
+    except Exception as exc:
+        logger.error(f"FATAL ERROR in get_tg_noreport_countries: {exc}", exc_info=True)
+        return None
 
 
 async def get_countries(service_id) -> Optional[list[dict]]:
@@ -142,7 +203,7 @@ async def get_countries(service_id) -> Optional[list[dict]]:
         and turned into a ``None`` return so the caller can react.
 
     Returns:
-        List of dicts: {"country", "service_id", "base_price",
+        List of dicts: {"country", "range", "service_id", "base_price",
                         "final_price", "in_stock"} or ``None`` on failure.
     """
     try:
@@ -150,7 +211,8 @@ async def get_countries(service_id) -> Optional[list[dict]]:
         from database.db import get_profit_margin
         margin = await get_profit_margin(config.ACCOUNT_PROFIT_MARGIN_PERCENT) / 100
 
-        async with aiohttp.ClientSession() as session:
+        timeout = aiohttp.ClientTimeout(total=15)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             url_prices = f"https://api.ozvinoo.xyz/web/{TOKEN}/get-prices/{service_id}"
             async with session.get(url_prices) as resp:
                 raw_prices = await resp.text()
@@ -163,8 +225,12 @@ async def get_countries(service_id) -> Optional[list[dict]]:
                 if not isinstance(item, dict):
                     continue
                 base_price = int(item.get("price", 0))
+                # Use 'range' field for callback_data (short prefix code)
+                # Falls back to country name if range is missing
+                country_range = str(item.get("range", item.get("country", "1")))
                 result.append({
                     "country": item.get("country", "نامشخص"),
+                    "range": country_range,
                     "service_id": service_id,
                     "base_price": base_price,
                     "final_price": int(base_price + (base_price * margin)),
@@ -188,7 +254,8 @@ async def buy_virtual_number(service_id: int, country: str) -> Optional[dict]:
     """
     url = f"https://api.ozvinoo.xyz/web/{TOKEN}/getNumber/{service_id}/{country}"
     try:
-        async with aiohttp.ClientSession() as session:
+        timeout = aiohttp.ClientTimeout(total=15)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(url) as resp:
                 return await resp.json()
     except Exception as exc:
@@ -206,7 +273,8 @@ async def get_number_code(request_id: int) -> Optional[dict]:
     """
     url = f"https://api.ozvinoo.xyz/web/{TOKEN}/getCode/{request_id}"
     try:
-        async with aiohttp.ClientSession() as session:
+        timeout = aiohttp.ClientTimeout(total=15)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(url) as resp:
                 return await resp.json()
     except Exception as exc:

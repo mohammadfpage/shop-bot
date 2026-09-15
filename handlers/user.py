@@ -289,7 +289,7 @@ async def cb_app_selected(callback: CallbackQuery, state: FSMContext) -> None:
         service_id = callback.data.split(":", 1)[1]
 
         from utils.ozvinoo import get_telegram_countries
-        from keyboards.inline import virtual_country_kb
+        from keyboards.inline import virtual_country_kb, virtual_services_kb
         from keyboards.inline import back_to_menu_kb
         from states.states import VirtualNumberStates
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -299,13 +299,13 @@ async def cb_app_selected(callback: CallbackQuery, state: FSMContext) -> None:
         countries = await get_telegram_countries(service_id=service_id)
 
         if not countries:
-            retry_kb = InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text="🔙 بازگشت", callback_data="menu:virtual_number")
-            ]])
-            await callback.message.edit_text(
-                "⚠️ در حال حاضر شماره‌ای برای این سرویس موجود نیست.",
-                reply_markup=retry_kb,
-            )
+            with contextlib.suppress(TelegramBadRequest):
+                await callback.message.edit_text(
+                    "⚠️ در حال حاضر شماره‌ای برای این سرویس موجود نیست.\n"
+                    "لطفاً بعداً دوباره تلاش کنید.",
+                    reply_markup=virtual_services_kb(),
+                )
+            await callback.answer()
             return
 
         await state.set_state(VirtualNumberStates.choose_country)
@@ -313,13 +313,20 @@ async def cb_app_selected(callback: CallbackQuery, state: FSMContext) -> None:
             virtual_service_id=service_id,
             virtual_countries=countries,
         )
-        await callback.message.edit_text(
-            "🌐 کشور مورد نظر خود را انتخاب کنید (برای خرید روی هر ستون بزنید):",
-            reply_markup=virtual_country_kb(countries, service_id, page=0),
-        )
+        with contextlib.suppress(TelegramBadRequest):
+            await callback.message.edit_text(
+                "🌐 کشور مورد نظر خود را انتخاب کنید (برای خرید روی هر ستون بزنید):",
+                reply_markup=virtual_country_kb(countries, service_id, page=0),
+            )
+        await callback.answer()
     except Exception as e:
-        logging.getLogger(__name__).error(f"CRASH IN APP HANDLER: {e}", exc_info=True)
-        await callback.message.answer(f"خطای سیستمی: {e}")
+        logger.error(f"CRASH IN APP HANDLER: {e}", exc_info=True)
+        with contextlib.suppress(TelegramBadRequest):
+            await callback.message.edit_text(
+                "⚠️ خطایی رخ داد. لطفاً دوباره تلاش کنید.",
+                reply_markup=virtual_services_kb(),
+            )
+        await callback.answer()
 
 
 @router.callback_query(F.data == "menu:back_main")
@@ -342,169 +349,222 @@ async def cb_virtual_country_page(callback: CallbackQuery, state: FSMContext) ->
         service_id = parts[1]
         page = int(parts[2])
 
-        from keyboards.inline import virtual_country_kb
-        from utils.ozvinoo import get_countries
+        from keyboards.inline import virtual_country_kb, virtual_services_kb
+        from utils.ozvinoo import get_telegram_countries
 
         data = await state.get_data()
         countries = data.get("virtual_countries")
 
         # Refresh if the cached list belongs to a different service
         if not countries or data.get("virtual_service_id") != service_id:
-            countries = await get_countries(service_id)
+            countries = await get_telegram_countries(service_id)
             await state.update_data(
                 virtual_service_id=service_id,
                 virtual_countries=countries,
             )
 
         if not countries:
-            await callback.answer("⚠️ خطا در ارتباط با سرور اوزوینو.", show_alert=True)
+            with contextlib.suppress(TelegramBadRequest):
+                await callback.message.edit_text(
+                    "⚠️ لیست کشورها منقضی شده است.",
+                    reply_markup=virtual_services_kb(),
+                )
+            await callback.answer()
             return
 
-        await callback.message.edit_reply_markup(
-            reply_markup=virtual_country_kb(countries, service_id, page=page)
-        )
+        with contextlib.suppress(TelegramBadRequest):
+            await callback.message.edit_reply_markup(
+                reply_markup=virtual_country_kb(countries, service_id, page=page)
+            )
         await callback.answer()
     except Exception as e:
-        logging.getLogger(__name__).error(f"CRASH IN PAGINATION: {e}", exc_info=True)
-        await callback.message.answer(f"خطای سیستمی: {e}")
+        logger.error(f"CRASH IN PAGINATION: {e}", exc_info=True)
+        with contextlib.suppress(TelegramBadRequest):
+            await callback.message.edit_text(
+                "⚠️ خطایی رخ داد. لطفاً دوباره تلاش کنید.",
+                reply_markup=virtual_services_kb(),
+            )
+        await callback.answer()
 
 
 @router.callback_query(F.data.startswith("v_buy:"))
 async def cb_virtual_buy(callback: CallbackQuery, state: FSMContext) -> None:
     """User tapped a country row — show confirmation with the final price."""
-    await callback.answer()
+    try:
+        parts = callback.data.split(":")
+        if len(parts) < 3:
+            await callback.answer("⚠️ داده نامعتبر.", show_alert=True)
+            return
 
-    parts = callback.data.split(":")
-    service_id = parts[1]
-    country = ":".join(parts[2:])  # country may contain no ':'; kept safe
+        service_id = parts[1]
+        country = ":".join(parts[2:])  # range code; may contain no ':'
 
-    from utils.ozvinoo import get_countries
-    from keyboards.inline import back_to_menu_kb
+        from utils.ozvinoo import get_telegram_countries
+        from keyboards.inline import virtual_services_kb, back_to_menu_kb
 
-    data = await state.get_data()
-    countries = data.get("virtual_countries")
-    if not countries or data.get("virtual_service_id") != service_id:
-        countries = await get_countries(service_id)
-        await state.update_data(virtual_service_id=service_id, virtual_countries=countries)
+        data = await state.get_data()
+        countries = data.get("virtual_countries")
+        if not countries or data.get("virtual_service_id") != service_id:
+            countries = await get_telegram_countries(service_id)
+            if countries:
+                await state.update_data(virtual_service_id=service_id, virtual_countries=countries)
 
-    selected = next((c for c in (countries or []) if c.get("country") == country), None)
+        if not countries:
+            await callback.answer("⚠️ لیست کشورها منقضی شده است. لطفاً دوباره انتخاب کنید.", show_alert=True)
+            return
 
-    if selected is None:
-        await callback.answer("⚠️ کشور یافت نشد.", show_alert=True)
-        return
+        selected = next((c for c in countries if c.get("range") == country), None)
 
-    if not selected.get("in_stock"):
-        await callback.answer("⚠️ این کشور در حال حاضر موجود نیست.", show_alert=True)
-        return
+        if selected is None:
+            await callback.answer("⚠️ کشور یافت نشد.", show_alert=True)
+            return
 
-    final_price = selected.get("final_price", selected.get("price", 0))
-    price_str = f"{final_price:,}".replace(",", "،")
-    country_name = selected.get("country", "نامشخص")
+        if not selected.get("in_stock"):
+            await callback.answer("⚠️ این کشور در حال حاضر موجود نیست.", show_alert=True)
+            return
 
-    await state.update_data(
-        virtual_service_id=service_id,
-        country_name=country_name,
-        country_key=country,
-        price_toman=final_price,
-        base_price_toman=selected.get("base_price", final_price),
-    )
-    await state.set_state(VirtualNumberStates.confirm_buy)
+        final_price = selected.get("final_price", selected.get("price", 0))
+        price_str = f"{final_price:,}".replace(",", "،")
+        country_name = selected.get("country", "نامشخص")
 
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-    from utils.emojis import get_premium_id
-    confirm_kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"خرید — {price_str} تومان",
-                              callback_data="virtual:confirm",
-                              style="success",
-                              icon_custom_emoji_id=get_premium_id("check"))],
-        [InlineKeyboardButton(text="انصراف",
-                              callback_data=f"v_app:{service_id}",
-                              style="danger",
-                              icon_custom_emoji_id=get_premium_id("cross"))],
-    ])
-
-    with contextlib.suppress(TelegramBadRequest):
-        await callback.message.edit_text(
-            f"{get_pe('key_lock')} <b>خرید شماره مجازی</b>\n\n"
-            f"{get_pe('web')} کشور: <b>{country_name}</b>\n"
-            f"{get_pe('money')} قیمت نهایی: <b>{price_str} تومان</b>\n\n"
-            "پس از خرید، یک شماره مجازی دریافت خواهید کرد.\n"
-            "کد تأیید ظرف چند دقیقه برای شما ارسال می‌شود.\n\n"
-            "آیا مطمئن هستید؟",
-            reply_markup=confirm_kb,
+        await state.update_data(
+            virtual_service_id=service_id,
+            country_name=country_name,
+            country_key=country,
+            price_toman=final_price,
+            base_price_toman=selected.get("base_price", final_price),
         )
-    await callback.answer()
+        await state.set_state(VirtualNumberStates.confirm_buy)
+
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        from utils.emojis import get_premium_id
+        confirm_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=f"خرید — {price_str} تومان",
+                                  callback_data="virtual:confirm",
+                                  style="success",
+                                  icon_custom_emoji_id=get_premium_id("check"))],
+            [InlineKeyboardButton(text="انصراف",
+                                  callback_data=f"v_app:{service_id}",
+                                  style="danger",
+                                  icon_custom_emoji_id=get_premium_id("cross"))],
+        ])
+
+        with contextlib.suppress(TelegramBadRequest):
+            await callback.message.edit_text(
+                f"{get_pe('key_lock')} <b>خرید شماره مجازی</b>\n\n"
+                f"{get_pe('web')} کشور: <b>{country_name}</b>\n"
+                f"{get_pe('money')} قیمت نهایی: <b>{price_str} تومان</b>\n\n"
+                "پس از خرید، یک شماره مجازی دریافت خواهید کرد.\n"
+                "کد تأیید ظرف چند دقیقه برای شما ارسال می‌شود.\n\n"
+                "آیا مطمئن هستید؟",
+                reply_markup=confirm_kb,
+            )
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"CRASH IN V_BUY: {e}", exc_info=True)
+        with contextlib.suppress(TelegramBadRequest):
+            await callback.message.edit_text(
+                "⚠️ خطایی رخ داد. لطفاً دوباره تلاش کنید.",
+                reply_markup=virtual_services_kb(),
+            )
+        await callback.answer()
 
 
 @router.callback_query(F.data == "virtual:confirm", VirtualNumberStates.confirm_buy)
 async def cb_virtual_confirm_buy(callback: CallbackQuery, state: FSMContext) -> None:
     """User confirmed — initiate Zarinpal payment for the virtual number."""
-    await callback.answer()
-    data = await state.get_data()
-    service_id = data.get("virtual_service_id")
-    country = data.get("country_key")
-    country_name = data.get("country_name", "نامشخص")
-    price_toman = data.get("price_toman", 0)
+    try:
+        await callback.answer()
+        data = await state.get_data()
+        service_id = data.get("virtual_service_id")
+        country = data.get("country_key")
+        country_name = data.get("country_name", "نامشخص")
+        price_toman = data.get("price_toman", 0)
 
-    from database.db import create_order, create_payment, update_payment_authority
-    from utils.zarinpal import request_payment
-    from keyboards.inline import pay_link_kb
+        if not service_id or not country or not price_toman:
+            with contextlib.suppress(TelegramBadRequest):
+                await callback.message.edit_text(
+                    "⚠️ اطلاعات سفارش ناقص است. لطفاً دوباره شروع کنید.",
+                    reply_markup=await main_menu_kb(),
+                )
+            await state.clear()
+            return
 
-    final_irt = int(price_toman)
-    base_price = data.get("base_price_toman", final_irt)
+        from database.db import create_order, create_payment, update_payment_authority
+        from utils.zarinpal import request_payment
+        from keyboards.inline import pay_link_kb
 
-    # ── Pre-purchase Ozvinoo panel balance check ──
-    panel_balance = await get_panel_balance()
-    if panel_balance < base_price:
-        with contextlib.suppress(TelegramBadRequest):
-            await callback.message.edit_text(
-                f"{get_pe('warning')} <b>موجودی پنل اوزوینو کافی نیست.</b>\n\n"
-                f"موجودی فعلی: <b>{panel_balance:,}</b> تومان\n"
-                f"قیمت پایه شماره: <b>{base_price:,}</b> تومان\n\n"
-                "لطفاً بعداً دوباره تلاش کنید.",
-                reply_markup=back_to_menu_kb(),
-            )
-        await state.clear()
-        return
+        final_irt = int(price_toman)
+        base_price = data.get("base_price_toman", final_irt)
 
-    order_id = await create_order(
-        user_id=callback.from_user.id,
-        product=f"شماره مجازی: {country_name}",
-        details=f"سرویس: {service_id} | کشور: {country}",
-        amount_irt=final_irt,
-    )
+        # ── Pre-purchase Ozvinoo panel balance check ──
+        panel_balance = await get_panel_balance()
+        if panel_balance < base_price:
+            with contextlib.suppress(TelegramBadRequest):
+                await callback.message.edit_text(
+                    f"{get_pe('warning')} <b>موجودی پنل اوزوینو کافی نیست.</b>\n\n"
+                    f"موجودی فعلی: <b>{panel_balance:,}</b> تومان\n"
+                    f"قیمت پایه شماره: <b>{base_price:,}</b> تومان\n\n"
+                    "لطفاً بعداً دوباره تلاش کنید.",
+                    reply_markup=back_to_menu_kb(),
+                )
+            await state.clear()
+            return
 
-    result = await request_payment(
-        amount_irt=final_irt,
-        description=f"خرید شماره مجازی {country_name}",
-    )
-
-    if not result.success or not result.authority:
-        with contextlib.suppress(TelegramBadRequest):
-            await callback.message.edit_text(
-                f"{get_pe('cross')} درخواست پرداخت ناموفق بود:\n{result.message}",
-                reply_markup=back_to_menu_kb(),
-            )
-        await state.clear()
-        return
-
-    payment_id = await create_payment(order_id, final_irt)
-    await update_payment_authority(payment_id, result.authority)
-    await state.update_data(
-        order_id=order_id, payment_id=payment_id,
-        authority=result.authority, amount_irt=final_irt,
-    )
-    await state.set_state(VirtualNumberStates.waiting_code)
-
-    price_str = f"{final_irt:,}".replace(",", "،")
-    with contextlib.suppress(TelegramBadRequest):
-        await callback.message.edit_text(
-            f"{get_pe('card')} <b>پرداخت: شماره مجازی {country_name}</b>\n\n"
-            f"{get_pe('money')} مبلغ: <b>{price_str} تومان</b>\n\n"
-            "برای پرداخت روی دکمه زیر کلیک کنید:\n"
-            "<i>پس از پرداخت موفق، شماره مجازی و کد تأیید برای شما ارسال خواهد شد.</i>",
-            reply_markup=pay_link_kb(result.start_pay_url),
+        order_id = await create_order(
+            user_id=callback.from_user.id,
+            product=f"شماره مجازی: {country_name}",
+            details=f"سرویس: {service_id} | کشور: {country}",
+            amount_irt=final_irt,
         )
+
+        result = await request_payment(
+            amount_irt=final_irt,
+            description=f"خرید شماره مجازی {country_name}",
+        )
+
+        if not result.success or not result.authority:
+            with contextlib.suppress(TelegramBadRequest):
+                await callback.message.edit_text(
+                    f"{get_pe('cross')} درخواست پرداخت ناموفق بود:\n"
+                    "لطفاً بعداً دوباره تلاش کنید.",
+                    reply_markup=back_to_menu_kb(),
+                )
+            await state.clear()
+            return
+
+        payment_id = await create_payment(order_id, final_irt)
+        await update_payment_authority(payment_id, result.authority)
+        await state.update_data(
+            order_id=order_id, payment_id=payment_id,
+            authority=result.authority, amount_irt=final_irt,
+        )
+        await state.set_state(VirtualNumberStates.waiting_code)
+
+        price_str = f"{final_irt:,}".replace(",", "،")
+        with contextlib.suppress(TelegramBadRequest):
+            await callback.message.edit_text(
+                f"{get_pe('card')} <b>پرداخت: شماره مجازی {country_name}</b>\n\n"
+                f"{get_pe('money')} مبلغ: <b>{price_str} تومان</b>\n\n"
+                "برای پرداخت روی دکمه زیر کلیک کنید:\n"
+                "<i>پس از پرداخت موفق، شماره مجازی و کد تأیید برای شما ارسال خواهد شد.</i>",
+                reply_markup=pay_link_kb(result.start_pay_url),
+            )
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"CRASH IN VIRTUAL CONFIRM: {e}", exc_info=True)
+        with contextlib.suppress(TelegramBadRequest):
+            await callback.message.edit_text(
+                "⚠️ خطایی در فرآیند پرداخت رخ داد. لطفاً دوباره تلاش کنید.",
+                reply_markup=back_to_menu_kb(),
+            )
+        await state.clear()
+        await callback.answer()
+
+
+@router.callback_query(F.data == "ignore")
+async def cb_ignore(callback: CallbackQuery) -> None:
+    """Silently acknowledge taps on header/disabled buttons."""
     await callback.answer()
 
 
@@ -664,6 +724,6 @@ def _status_fa(status: str) -> str:
 
 @router.callback_query()
 async def unhandled_callback(callback: CallbackQuery) -> None:
-    import logging
-    logging.getLogger(__name__).error("UNHANDLED BUTTON CLICKED: '%s'", callback.data)
-    await callback.answer("دکمه ناشناخته!", show_alert=True)
+    """Catch-all for unrecognised callback_data — log silently, no alert."""
+    logger.warning("Unhandled callback_data: %s (user=%s)", callback.data, callback.from_user.id)
+    await callback.answer()

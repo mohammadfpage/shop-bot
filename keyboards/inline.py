@@ -413,32 +413,33 @@ def pay_link_kb(pay_url: str) -> InlineKeyboardMarkup:
 def virtual_services_kb() -> InlineKeyboardMarkup:
     """Static application-selection grid for the Virtual Number shop.
 
-    Matches the reference UI: a spotlight "Telegram" row on top, then a
-    3-column grid of the popular apps. Prices are fetched live per app on tap.
+    Hardcoded app list because GET /applications only returns Telegram.
+    Layout: Telegram dedicated + non-report on top, then 3-column grid.
     """
     builder = InlineKeyboardBuilder()
 
-    # Top row — Telegram dedicated panel
-    builder.button(text="💎 تلگرام - پنل اختصاصی", callback_data="v_app:1")
+    # Top rows — Telegram dedicated panels
+    builder.button(text="💎 تلگرام اختصاصی", callback_data="v_app:1")
+    builder.button(text="🚀 تلگرام غیرریپورت", callback_data="v_app:tg_noreport")
 
-    # Grid apps (typical IDs; the bot fetches live prices for these)
+    # Hardcoded popular services with numeric IDs matching the Ozvinoo API
     apps = [
-        ("چنج نامبر 🗳", "v_app:change"),
-        ("اینستاگرام 🚀", "v_app:3"),
-        ("واتساپ ✳️", "v_app:2"),
-        ("ایمو 📶", "v_app:imo"),
-        ("فیسبوک 📬", "v_app:fb"),
-        ("گوگل 🔍", "v_app:google"),
-        ("تیک تاک ⌚", "v_app:tiktok"),
-        ("ایکس ❎", "v_app:x"),
-        ("وی چت 💬", "v_app:wechat"),
+        ("واتساپ ✳️", "2"),
+        ("اینستاگرام 🚀", "3"),
+        ("گوگل 🔍", "4"),
+        ("فیسبوک 📬", "5"),
+        ("ایکس ❎", "6"),
+        ("تیک تاک ⌚", "7"),
+        ("ایمو 📶", "8"),
+        ("وی چت 💬", "9"),
+        ("تیندر 🔥", "10"),
     ]
-    for text, cb in apps:
-        builder.button(text=text, callback_data=cb)
+    for name, code in apps:
+        builder.button(text=name, callback_data=f"v_app:{code}")
 
-    builder.adjust(1, 3, 3, 3)  # 1 on top, then 3 per row
+    builder.adjust(1, 1, 3, 3, 3)  # 1+1 top rows, then 3-column grid
     builder.row(InlineKeyboardButton(
-        text="🔙 بازگشت",
+        text="🔙 بازگشت به منو",
         callback_data="menu:back_main",
     ))
     return builder.as_markup()
@@ -448,31 +449,42 @@ def virtual_country_kb(countries: list, service_id, page: int = 0) -> InlineKeyb
     """Build a paginated, table-style keyboard for virtual number purchase.
 
     Layout (exactly 10 countries per page):
+      Controls:  [🔍 فیلتر پیشرفته] [🔄 خرید گروهی]   ← TOP (was bottom)
       Header:    [💰 قیمت] [📊 وضعیت] [🌍 نام کشور]   (callback_data="ignore")
       Data rows: [price] [✅ موجود | ❌ ناموجود] [country]  ← ALL share the SAME
-                 callback_data ``v_buy:{service_id}:{country}`` so the user can
-                 tap anywhere on the row to buy. Out-of-stock rows are disabled.
-      Controls:  [🔍 فیلتر پیشرفته] [🔄 خرید گروهی]
+                 callback_data ``v_buy:{service_id}:{range}`` so the user can
+                 tap anywhere on the row to buy. Uses country range (prefix code)
+                 instead of country name to stay within Telegram's 64-byte limit.
+                 Out-of-stock rows are disabled.
       Pagination:[⬅️ قبلی] [بعدی ➡️]   (only shown when applicable)
       Footer:    [🔙 سرویس‌ها] → back to the application list
     """
     builder = InlineKeyboardBuilder()
 
-    # 1. Static header row
+    # 1. Controls at TOP (Issue #2 fix)
+    builder.row(
+        InlineKeyboardButton(text="🔍 فیلتر پیشرفته", callback_data=f"v_filter:{service_id}"),
+        InlineKeyboardButton(text="🔄 خرید گروهی", callback_data=f"v_bulk:{service_id}"),
+    )
+
+    # 2. Static header row
     builder.row(
         InlineKeyboardButton(text="💰 قیمت", callback_data="ignore"),
         InlineKeyboardButton(text="📊 وضعیت", callback_data="ignore"),
         InlineKeyboardButton(text="🌍 نام کشور", callback_data="ignore"),
     )
 
-    # 2. Data rows (10 per page)
+    # 3. Data rows (10 per page)
     items_per_page = 10
     start = page * items_per_page
     end = start + items_per_page
 
     for c in countries[start:end]:
         status_text = "✅ موجود" if c["in_stock"] else "❌ ناموجود"
-        cb_data = f"v_buy:{service_id}:{c['country']}" if c["in_stock"] else "ignore"
+        country_range = c.get('range', '1')
+        # Issue #5 fix: use range (short prefix code) instead of country name
+        # to keep callback_data under Telegram's 64-byte limit
+        cb_data = f"v_buy:{service_id}:{country_range}" if c["in_stock"] else "ignore"
 
         price = c.get("final_price", c.get("price", 0))
         country_name = c["country"][:15]
@@ -482,12 +494,6 @@ def virtual_country_kb(countries: list, service_id, page: int = 0) -> InlineKeyb
             InlineKeyboardButton(text=status_text, callback_data=cb_data),
             InlineKeyboardButton(text=country_name, callback_data=cb_data),
         )
-
-    # 3. Controls row
-    builder.row(
-        InlineKeyboardButton(text="🔍 فیلتر پیشرفته", callback_data=f"v_filter:{service_id}"),
-        InlineKeyboardButton(text="🔄 خرید گروهی", callback_data=f"v_bulk:{service_id}"),
-    )
 
     # 4. Pagination navigation
     nav = []
