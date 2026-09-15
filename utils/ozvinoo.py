@@ -117,6 +117,33 @@ async def get_applications() -> Optional[list[dict]]:
         return app_list or None
     except Exception as exc:
         logger.error(f"FATAL ERROR in get_applications: {exc}", exc_info=True)
+
+
+async def get_applications_list() -> dict:
+    """Fetch the raw applications dict from the Ozvinoo API.
+
+    Returns the raw dict keyed by app code (e.g. {"tg": {...}, "wa": {...}})
+    so the keyboard can map codes to real ``service_id``s dynamically.
+    Returns an empty dict on failure.
+    """
+    try:
+        timeout = aiohttp.ClientTimeout(total=10)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            url = f"https://api.ozvinoo.xyz/web/{TOKEN}/applications"
+            async with session.get(url) as resp:
+                raw = await resp.text()
+                logger.debug(f"RAW APPLICATIONS LIST: {raw[:1000]}")
+                data = json.loads(raw)
+
+        if isinstance(data, dict):
+            return data
+        elif isinstance(data, list):
+            # Convert list to dict keyed by code for consistent access
+            return {str(item.get("code", "")): item for item in data if isinstance(item, dict)}
+        return {}
+    except Exception as exc:
+        logger.error(f"Error in get_applications_list: {exc}", exc_info=True)
+        return {}
         return None
 
 

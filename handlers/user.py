@@ -271,14 +271,26 @@ async def cb_menu_security(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "menu:virtual_number")
 async def cb_menu_virtual_number(callback: CallbackQuery) -> None:
-    """Show the static application-selection menu (App → Country flow)."""
-    from keyboards.inline import virtual_services_kb
-    with contextlib.suppress(TelegramBadRequest):
-        await callback.message.edit_text(
-            "📱 <b>سرویس شماره مجازی</b>\n"
-            "اپلیکیشن مورد نظر خود را انتخاب کنید:",
-            reply_markup=virtual_services_kb(),
+    """Show the application-selection menu with dynamic app list from API."""
+    try:
+        from utils.ozvinoo import get_applications_list
+        from keyboards.inline import virtual_services_kb
+
+        apps_data = await get_applications_list()
+        text = (
+            "\U0001f6cd\ufe0f <b>خرید شماره مجازی</b>\n\n"
+            "\U0001f4c8 جهت خرید شماره مجازی لطفا نوع سرویس و پلتفرم مدنظر خود را "
+            "از کیبورد پایین انتخاب نمایید؛"
         )
+        with contextlib.suppress(TelegramBadRequest):
+            await callback.message.edit_text(text, reply_markup=virtual_services_kb(apps_data))
+    except Exception as e:
+        logger.error(f"CRASH IN MENU VIRTUAL: {e}", exc_info=True)
+        with contextlib.suppress(TelegramBadRequest):
+            await callback.message.edit_text(
+                "⚠️ خطایی رخ داد. لطفاً دوباره تلاش کنید.",
+                reply_markup=back_to_menu_kb(),
+            )
     await callback.answer()
 
 
@@ -288,22 +300,21 @@ async def cb_app_selected(callback: CallbackQuery, state: FSMContext) -> None:
     try:
         service_id = callback.data.split(":", 1)[1]
 
-        from utils.ozvinoo import get_telegram_countries
+        from utils.ozvinoo import get_telegram_countries, get_applications_list
         from keyboards.inline import virtual_country_kb, virtual_services_kb
-        from keyboards.inline import back_to_menu_kb
         from states.states import VirtualNumberStates
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
         await callback.message.edit_text("⏳ در حال دریافت لیست کشورها...")
 
         countries = await get_telegram_countries(service_id=service_id)
 
         if not countries:
+            apps_data = await get_applications_list()
             with contextlib.suppress(TelegramBadRequest):
                 await callback.message.edit_text(
                     "⚠️ در حال حاضر شماره‌ای برای این سرویس موجود نیست.\n"
                     "لطفاً بعداً دوباره تلاش کنید.",
-                    reply_markup=virtual_services_kb(),
+                    reply_markup=virtual_services_kb(apps_data),
                 )
             await callback.answer()
             return
@@ -313,18 +324,41 @@ async def cb_app_selected(callback: CallbackQuery, state: FSMContext) -> None:
             virtual_service_id=service_id,
             virtual_countries=countries,
         )
+
+        # Build the exact display text based on service type
+        sid_str = str(service_id)
+        if sid_str == "1" or sid_str == "tg_noreport":
+            srv_name = "تلگرام" if sid_str == "1" else "تلگرام غیرریپورت"
+            text = (
+                f"💎 سرویس {srv_name} انتخاب شد\n"
+                f"👉 جهت خرید شماره مجازی روی نام کشور مورد نظر خود کلیک نمایید:\n\n"
+                f"❗️ توجه داشته باشید تمامی شماره ها برای راحتی شما از قبل بر روی تلگرام ثبت نام شده اند، "
+                f"کشورهایی که با 🌟 مشخص شده اند خام میباشند!"
+            )
+        else:
+            text = (
+                "🌐 سرویس انتخاب شد.\n"
+                "👉 جهت خرید شماره مجازی روی نام کشور مورد نظر خود کلیک نمایید:"
+            )
+
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(
-                "🌐 کشور مورد نظر خود را انتخاب کنید (برای خرید روی هر ستون بزنید):",
+                text,
                 reply_markup=virtual_country_kb(countries, service_id, page=0),
             )
         await callback.answer()
     except Exception as e:
         logger.error(f"CRASH IN APP HANDLER: {e}", exc_info=True)
+        apps_data = {}
+        try:
+            from utils.ozvinoo import get_applications_list
+            apps_data = await get_applications_list()
+        except Exception:
+            pass
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(
                 "⚠️ خطایی رخ داد. لطفاً دوباره تلاش کنید.",
-                reply_markup=virtual_services_kb(),
+                reply_markup=virtual_services_kb(apps_data),
             )
         await callback.answer()
 
