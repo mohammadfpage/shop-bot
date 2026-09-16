@@ -27,7 +27,7 @@ def main_reply_kb() -> ReplyKeyboardMarkup:
                     text="فروشگاه",
                     style="primary",
                     icon_custom_emoji_id=get_premium_id("store"),
-                ),بله
+                ),
                 KeyboardButton(
                     text="پروفایل",
                     style="primary",
