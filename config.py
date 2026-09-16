@@ -61,7 +61,13 @@ class Config:
     # ─── Profit Margin ──────────────────────────────────────────────────
     PROFIT_MARGIN_PERCENT: float = 20.0  # 20% on top of USD price * rate
 
-    # ─── Ozvinoo Account Purchasing API ────────────────────────────────
+    # ─── Shiznumber Virtual Number API ────────────────────────────────
+    SHIZ_API_KEY: str = os.getenv(
+        "SHIZ_API_KEY",
+        "YOUR_API_KEY_HERE",
+    )
+
+    # ─── Legacy Ozvinoo (kept for backward compatibility) ──────────────
     OZVINOO_BASE_URL: str = "https://api.ozvinoo.xyz/"
     OZVINOO_API_KEY: str = os.getenv(
         "OZVINOO_API_KEY",

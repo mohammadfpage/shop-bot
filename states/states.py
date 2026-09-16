@@ -95,7 +95,7 @@ class AccountMarginState(StatesGroup):
     waiting_for_margin = State()  # admin is typing the new margin percentage
 
 
-# ─── Ozvinoo Virtual Number Purchase ─────────────────────────────
+# ─── Virtual Number Purchase (Shiznumber API) ────────────────────
 class VirtualNumberStates(StatesGroup):
     """Flow: choose country → confirm purchase → wait for code → receive code."""
     choose_country = State()    # user selects a country

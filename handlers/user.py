@@ -19,12 +19,12 @@ from keyboards.inline import (
     market_rates_refresh_kb,
     welcome_inline_kb,
 )
-from keyboards.reply import main_reply_kb, virtual_services_reply_kb, VIRTUAL_SERVICES_MAP
+from keyboards.reply import main_reply_kb, virtual_services_reply_kb, SHIZ_SERVICES_MAP
 from keyboards.admin_reply import admin_reply_kb
 from keyboards.callback_data import WelcomeCallback
 from filters import IsAdmin
 from utils.emojis import get_pe
-from utils.ozvinoo import get_panel_balance
+from utils.shiznumber import get_panel_balance
 
 router = Router(name="user")
 
@@ -289,18 +289,18 @@ async def cb_menu_virtual_number(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-@router.message(F.text.in_(VIRTUAL_SERVICES_MAP.keys()))
-async def process_service_selection(message: Message, state: FSMContext) -> None:
+@router.message(F.text.in_(SHIZ_SERVICES_MAP.keys()))
+async def process_shiz_service_selection(message: Message, state: FSMContext) -> None:
     """Handle a service tapped from the ReplyKeyboard.
 
-    Maps the button text to a numeric service_id, fetches countries
-    via the Ozvinoo API, and displays them in an InlineKeyboardMarkup.
+    Maps the button text to a Shiznumber slug, fetches countries
+    via the Shiznumber API, and displays them in an InlineKeyboardMarkup.
     """
-    service_id = VIRTUAL_SERVICES_MAP[message.text]
-    await message.answer("⏳ در حال دریافت لیست کشورها...")
+    slug = SHIZ_SERVICES_MAP[message.text]
+    await message.answer(f"⏳ در حال دریافت لیست کشورهای {message.text}...")
 
-    from utils.ozvinoo import get_telegram_countries
-    countries = await get_telegram_countries(service_id)
+    from utils.shiznumber import get_service_numbers
+    countries = await get_service_numbers(slug)
 
     if not countries:
         await message.answer(
@@ -312,27 +312,18 @@ async def process_service_selection(message: Message, state: FSMContext) -> None
 
     await state.set_state(VirtualNumberStates.choose_country)
     await state.update_data(
-        virtual_service_id=service_id,
+        virtual_slug=slug,
         virtual_countries=countries,
     )
 
     from keyboards.inline import virtual_country_kb
 
-    sid_str = str(service_id)
-    if sid_str == "1":
-        text = (
-            f"💎 سرویس تلگرام انتخاب شد\n"
-            f"👉 جهت خرید شماره مجازی روی نام کشور مورد نظر خود کلیک نمایید:\n\n"
-            f"❗️ توجه داشته باشید تمامی شماره ها برای راحتی شما از قبل بر روی تلگرام ثبت نام شده اند، "
-            f"کشورهایی که با 🌟 مشخص شده اند خام میباشند!"
-        )
-    else:
-        text = (
-            f"🌐 سرویس {message.text} انتخاب شد.\n"
-            "👉 جهت خرید شماره مجازی روی نام کشور مورد نظر خود کلیک نمایید:"
-        )
+    text = (
+        f"🌐 سرویس {message.text} انتخاب شد.\n"
+        "👉 جهت خرید شماره مجازی روی نام کشور مورد نظر خود کلیک نمایید:"
+    )
 
-    await message.answer(text, reply_markup=virtual_country_kb(countries, service_id, 0))
+    await message.answer(text, reply_markup=virtual_country_kb(countries, slug, 0))
 
 
 @router.message(F.text == "🔙 بازگشت")
@@ -350,69 +341,54 @@ async def reply_btn_virtual_back(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data.startswith("v_app:"))
 async def cb_app_selected(callback: CallbackQuery, state: FSMContext) -> None:
-    """An app was selected via inline toggle — fetch its countries and show the table (page 0)."""
-    try:
-        service_id = callback.data.split(":", 1)[1]
+    """An app was selected via inline toggle — fetch its countries and show the table (page 0).
 
-        from utils.ozvinoo import get_telegram_countries, get_applications_list
+    With the Shiznumber migration, the callback data is ``v_app:{slug}``.
+    """
+    try:
+        slug = callback.data.split(":", 1)[1]
+
+        from utils.shiznumber import get_service_numbers
         from keyboards.inline import virtual_country_kb, virtual_services_kb
         from states.states import VirtualNumberStates
 
         await callback.message.edit_text("⏳ در حال دریافت لیست کشورها...")
 
-        countries = await get_telegram_countries(service_id=service_id)
+        countries = await get_service_numbers(slug)
 
         if not countries:
-            apps_data = await get_applications_list()
             with contextlib.suppress(TelegramBadRequest):
                 await callback.message.edit_text(
                     "⚠️ در حال حاضر شماره‌ای برای این سرویس موجود نیست.\n"
                     "لطفاً بعداً دوباره تلاش کنید.",
-                    reply_markup=virtual_services_kb(apps_data),
+                    reply_markup=virtual_services_kb(),
                 )
             await callback.answer()
             return
 
         await state.set_state(VirtualNumberStates.choose_country)
         await state.update_data(
-            virtual_service_id=service_id,
+            virtual_slug=slug,
             virtual_countries=countries,
         )
 
-        # Build the exact display text based on service type
-        sid_str = str(service_id)
-        if sid_str == "1" or sid_str == "tg_noreport":
-            srv_name = "تلگرام" if sid_str == "1" else "تلگرام غیرریپورت"
-            text = (
-                f"💎 سرویس {srv_name} انتخاب شد\n"
-                f"👉 جهت خرید شماره مجازی روی نام کشور مورد نظر خود کلیک نمایید:\n\n"
-                f"❗️ توجه داشته باشید تمامی شماره ها برای راحتی شما از قبل بر روی تلگرام ثبت نام شده اند، "
-                f"کشورهایی که با 🌟 مشخص شده اند خام میباشند!"
-            )
-        else:
-            text = (
-                "🌐 سرویس انتخاب شد.\n"
-                "👉 جهت خرید شماره مجازی روی نام کشور مورد نظر خود کلیک نمایید:"
-            )
+        text = (
+            f"🌐 سرویس انتخاب شد.\n"
+            "👉 جهت خرید شماره مجازی روی نام کشور مورد نظر خود کلیک نمایید:"
+        )
 
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(
                 text,
-                reply_markup=virtual_country_kb(countries, service_id, page=0),
+                reply_markup=virtual_country_kb(countries, slug, page=0),
             )
         await callback.answer()
     except Exception as e:
         logger.error(f"CRASH IN APP HANDLER: {e}", exc_info=True)
-        apps_data = {}
-        try:
-            from utils.ozvinoo import get_applications_list
-            apps_data = await get_applications_list()
-        except Exception:
-            pass
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(
                 "⚠️ خطایی رخ داد. لطفاً دوباره تلاش کنید.",
-                reply_markup=virtual_services_kb(apps_data),
+                reply_markup=virtual_services_kb(),
             )
         await callback.answer()
 
@@ -434,20 +410,20 @@ async def cb_virtual_country_page(callback: CallbackQuery, state: FSMContext) ->
     """Flip between virtual-country pages using the FSM-cached list."""
     try:
         parts = callback.data.split(":")
-        service_id = parts[1]
+        slug = parts[1]
         page = int(parts[2])
 
         from keyboards.inline import virtual_country_kb, virtual_services_kb
-        from utils.ozvinoo import get_telegram_countries
 
         data = await state.get_data()
         countries = data.get("virtual_countries")
 
-        # Refresh if the cached list belongs to a different service
-        if not countries or data.get("virtual_service_id") != service_id:
-            countries = await get_telegram_countries(service_id)
+        # Refresh if the cached list belongs to a different slug
+        if not countries or data.get("virtual_slug") != slug:
+            from utils.shiznumber import get_service_numbers
+            countries = await get_service_numbers(slug)
             await state.update_data(
-                virtual_service_id=service_id,
+                virtual_slug=slug,
                 virtual_countries=countries,
             )
 
@@ -462,7 +438,7 @@ async def cb_virtual_country_page(callback: CallbackQuery, state: FSMContext) ->
 
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_reply_markup(
-                reply_markup=virtual_country_kb(countries, service_id, page=page)
+                reply_markup=virtual_country_kb(countries, slug, page=page)
             )
         await callback.answer()
     except Exception as e:
@@ -477,31 +453,26 @@ async def cb_virtual_country_page(callback: CallbackQuery, state: FSMContext) ->
 
 @router.callback_query(F.data.startswith("v_buy:"))
 async def cb_virtual_buy(callback: CallbackQuery, state: FSMContext) -> None:
-    """User tapped a country row — show confirmation with the final price."""
+    """User tapped a country row — show confirmation with the final price.
+
+    The callback data format is ``v_buy:{item_id}`` where item_id is the
+    unique Shiznumber number-item ID.
+    """
     try:
         parts = callback.data.split(":")
-        if len(parts) < 3:
+        if len(parts) < 2:
             await callback.answer("⚠️ داده نامعتبر.", show_alert=True)
             return
 
-        service_id = parts[1]
-        country = ":".join(parts[2:])  # range code; may contain no ':'
+        item_id = parts[1]
 
-        from utils.ozvinoo import get_telegram_countries
         from keyboards.inline import virtual_services_kb, back_to_menu_kb
 
         data = await state.get_data()
-        countries = data.get("virtual_countries")
-        if not countries or data.get("virtual_service_id") != service_id:
-            countries = await get_telegram_countries(service_id)
-            if countries:
-                await state.update_data(virtual_service_id=service_id, virtual_countries=countries)
+        countries = data.get("virtual_countries", [])
+        slug = data.get("virtual_slug", "")
 
-        if not countries:
-            await callback.answer("⚠️ لیست کشورها منقضی شده است. لطفاً دوباره انتخاب کنید.", show_alert=True)
-            return
-
-        selected = next((c for c in countries if c.get("range") == country), None)
+        selected = next((c for c in countries if str(c.get("id")) == item_id), None)
 
         if selected is None:
             await callback.answer("⚠️ کشور یافت نشد.", show_alert=True)
@@ -511,14 +482,14 @@ async def cb_virtual_buy(callback: CallbackQuery, state: FSMContext) -> None:
             await callback.answer("⚠️ این کشور در حال حاضر موجود نیست.", show_alert=True)
             return
 
-        final_price = selected.get("final_price", selected.get("price", 0))
+        final_price = selected.get("final_price", selected.get("base_price", 0))
         price_str = f"{final_price:,}".replace(",", "،")
-        country_name = selected.get("country", "نامشخص")
+        country_name = selected.get("country_fa", "نامشخص")
 
         await state.update_data(
-            virtual_service_id=service_id,
+            virtual_slug=slug,
             country_name=country_name,
-            country_key=country,
+            item_id=item_id,
             price_toman=final_price,
             base_price_toman=selected.get("base_price", final_price),
         )
@@ -532,7 +503,7 @@ async def cb_virtual_buy(callback: CallbackQuery, state: FSMContext) -> None:
                                   style="success",
                                   icon_custom_emoji_id=get_premium_id("check"))],
             [InlineKeyboardButton(text="انصراف",
-                                  callback_data=f"v_app:{service_id}",
+                                  callback_data=f"v_page:{slug}:0",
                                   style="danger",
                                   icon_custom_emoji_id=get_premium_id("cross"))],
         ])
@@ -564,12 +535,12 @@ async def cb_virtual_confirm_buy(callback: CallbackQuery, state: FSMContext) -> 
     try:
         await callback.answer()
         data = await state.get_data()
-        service_id = data.get("virtual_service_id")
-        country = data.get("country_key")
+        slug = data.get("virtual_slug", "")
+        item_id = data.get("item_id")
         country_name = data.get("country_name", "نامشخص")
         price_toman = data.get("price_toman", 0)
 
-        if not service_id or not country or not price_toman:
+        if not slug or not item_id or not price_toman:
             with contextlib.suppress(TelegramBadRequest):
                 await callback.message.edit_text(
                     "⚠️ اطلاعات سفارش ناقص است. لطفاً دوباره شروع کنید.",
@@ -585,12 +556,12 @@ async def cb_virtual_confirm_buy(callback: CallbackQuery, state: FSMContext) -> 
         final_irt = int(price_toman)
         base_price = data.get("base_price_toman", final_irt)
 
-        # ── Pre-purchase Ozvinoo panel balance check ──
+        # ── Pre-purchase Shiznumber panel balance check ──
         panel_balance = await get_panel_balance()
         if panel_balance < base_price:
             with contextlib.suppress(TelegramBadRequest):
                 await callback.message.edit_text(
-                    f"{get_pe('warning')} <b>موجودی پنل اوزوینو کافی نیست.</b>\n\n"
+                    f"{get_pe('warning')} <b>موجودی پنل شیزنامبر کافی نیست.</b>\n\n"
                     f"موجودی فعلی: <b>{panel_balance:,}</b> تومان\n"
                     f"قیمت پایه شماره: <b>{base_price:,}</b> تومان\n\n"
                     "لطفاً بعداً دوباره تلاش کنید.",
@@ -602,7 +573,7 @@ async def cb_virtual_confirm_buy(callback: CallbackQuery, state: FSMContext) -> 
         order_id = await create_order(
             user_id=callback.from_user.id,
             product=f"شماره مجازی: {country_name}",
-            details=f"سرویس: {service_id} | کشور: {country}",
+            details=f"سرویس: {slug} | آیتم: {item_id}",
             amount_irt=final_irt,
         )
 

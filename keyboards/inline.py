@@ -408,64 +408,24 @@ def pay_link_kb(pay_url: str) -> InlineKeyboardMarkup:
     ])
 
 
-# ─── Virtual Number (New API — "شماره مجازی") ──────────────────────
+# ─── Virtual Number (Shiznumber API — "شماره مجازی") ────────────────
 
 def virtual_services_kb(apps_data: dict | None = None) -> InlineKeyboardMarkup:
-    """Build the application-selection grid dynamically from the Ozvinoo API.
+    """Build the application-selection grid dynamically.
 
-    ``apps_data`` is the raw dict returned by ``get_applications_list()``,
-    keyed by code (e.g. {"tg": {"id": 1, ...}, "wa": {"id": 2, ...}}).
-
-    Layout:
-      Row 0:  Telegram dedicated (full width)
-      Grid:   3 columns for all other apps
-      Footer: Back button
+    With the Shiznumber migration, the reply keyboard handles service
+    selection. This inline keyboard is kept as a fallback / legacy path.
     """
-    if apps_data is None:
-        apps_data = {}
+    from keyboards.reply import SHIZ_SERVICES_MAP
 
     builder = InlineKeyboardBuilder()
 
-    # Persian labels for known API codes (fallback to code/title if unknown)
-    app_map = {
-        "tg": "تلگرام - پنل اختصاصی 💎", "wa": "واتساپ ✳️",
-        "ig": "اینستاگرام 🚀", "change": "چنج نامبر 🗳",
-        "google": "گوگل 🔍", "fb": "فیسبوک 📬",
-        "imo": "ایمو 📶", "tiktok": "تیک تاک ⌚",
-        "x": "ایکس ❎", "wechat": "وی چت 💬",
-        "tinder": "تیندر 🔥", "likee": "لایکی 💖",
-        "yahoo": "یاهو 🌀", "netflix": "نتفلیکس 💢",
-        "paypal": "پیپال 🧾", "steam": "استیم 🎮",
-        "microsoft": "مایکروسافت 💻", "line": "لاین 🧩",
-        "uber": "اوبر 🚕", "alibaba": "علی بابا ☂️",
-        "amazon": "آمازون 🐝", "discord": "دیسکورد 🚹",
-        "apple": "اپل 🍎", "ebay": "ای بای 🛒",
-    }
-
-    app_list = list(apps_data.values()) if isinstance(apps_data, dict) else []
-    tg_id = "1"  # fallback
-    other_buttons = []
-
-    for app in app_list:
-        code = str(app.get("code", "")).lower()
-        app_id = str(app.get("id", ""))
-        # Identify Telegram (code == 'tg' or title contains 'telegram')
-        if code == "tg" or "telegram" in str(app.get("title", "")).lower():
-            tg_id = app_id
-            continue
-        btn_text = app_map.get(code, app.get("title", code))
-        other_buttons.append(
-            InlineKeyboardButton(text=btn_text, callback_data=f"v_app:{app_id}")
+    # Build inline buttons from SHIZ_SERVICES_MAP
+    items = list(SHIZ_SERVICES_MAP.items())
+    for persian_name, slug in items:
+        builder.row(
+            InlineKeyboardButton(text=persian_name, callback_data=f"v_app:{slug}")
         )
-
-    # Top Row: Full width Telegram
-    builder.row(
-        InlineKeyboardButton(text="تلگرام - پنل اختصاصی 💎", callback_data=f"v_app:{tg_id}")
-    )
-
-    # Grid: 3 columns for everything else
-    for i in range(0, len(other_buttons), 3):
-        builder.row(*other_buttons[i:i + 3])
 
     builder.row(InlineKeyboardButton(
         text="🔙 بازگشت به منو",
@@ -474,55 +434,46 @@ def virtual_services_kb(apps_data: dict | None = None) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def virtual_country_kb(countries: list, service_id, page: int = 0) -> InlineKeyboardMarkup:
+def virtual_country_kb(countries: list, slug: str, page: int = 0) -> InlineKeyboardMarkup:
     """Build a paginated, table-style keyboard for virtual number purchase.
 
+    Uses the Shiznumber item ``id`` for buy callbacks instead of the old
+    Ozvinoo range-based system.
+
     Layout (exactly 10 countries per page):
-      Toggle:    [🚀 شماره غیرریپورت] or [💎 پنل اختصاصی]  ← Telegram only
       Controls:  [🔍 فیلتر پیشرفته] [🔄 خرید گروهی]
-      Header:    [💰 قیمت] [📊 وضعیت] [🌍 نام کشور]
-      Data rows: [price] [✅ موجود | ❌ ناموجود] [country]  (range-based callback)
+      Header:    [💰 قیمت] [موجودی] [🌍 نام کشور]
+      Data rows: [price] [count] [country_fa]  (id-based callback)
       Pagination:[⬅️ قبلی] [بعدی ➡️]
-      Footer:    [🔙 سرویس‌ها] → back to application list
+      Footer:    [🔙 سرویس‌ها] → back to service list
     """
     builder = InlineKeyboardBuilder()
 
-    # 1. Non-report toggle (Telegram only)
-    sid_str = str(service_id)
-    if sid_str == "1":
-        builder.row(
-            InlineKeyboardButton(text="🚀 شماره غیرریپورت", callback_data="v_app:tg_noreport")
-        )
-    elif sid_str == "tg_noreport":
-        builder.row(
-            InlineKeyboardButton(text="💎 تلگرام - پنل اختصاصی", callback_data="v_app:1")
-        )
-
-    # 2. Filter / Bulk controls
+    # 1. Filter / Bulk controls
     builder.row(
-        InlineKeyboardButton(text="🔍 فیلتر پیشرفته", callback_data=f"v_filter:{service_id}"),
-        InlineKeyboardButton(text="🔄 خرید گروهی", callback_data=f"v_bulk:{service_id}"),
+        InlineKeyboardButton(text="🔍 فیلتر پیشرفته", callback_data=f"v_filter:{slug}"),
+        InlineKeyboardButton(text="🔄 خرید گروهی", callback_data=f"v_bulk:{slug}"),
     )
 
-    # 3. Header row
+    # 2. Header row
     builder.row(
         InlineKeyboardButton(text="💰 قیمت", callback_data="ignore"),
-        InlineKeyboardButton(text="📊 وضعیت", callback_data="ignore"),
+        InlineKeyboardButton(text="موجودی", callback_data="ignore"),
         InlineKeyboardButton(text="🌍 نام کشور", callback_data="ignore"),
     )
 
-    # 4. Data rows (10 per page)
+    # 3. Data rows (10 per page)
     items_per_page = 10
     start = page * items_per_page
     end = start + items_per_page
 
     for c in countries[start:end]:
-        status_text = "✅ موجود" if c["in_stock"] else "❌ ناموجود"
-        country_range = c.get("range", "1")
-        cb_data = f"v_buy:{service_id}:{country_range}" if c["in_stock"] else "ignore"
+        status_text = f"{c['count']} عدد" if c["in_stock"] else "❌ ناموجود"
+        # Using the unique Shiznumber item 'id' for the buy callback
+        cb_data = f"v_buy:{c['id']}" if c["in_stock"] else "ignore"
 
-        price = c.get("final_price", c.get("price", 0))
-        country_name = c["country"][:15]
+        price = c.get("final_price", c.get("base_price", 0))
+        country_name = c.get("country_fa", "نامشخص")[:15]
 
         builder.row(
             InlineKeyboardButton(text=f"{price:,}", callback_data=cb_data),
@@ -530,16 +481,16 @@ def virtual_country_kb(countries: list, service_id, page: int = 0) -> InlineKeyb
             InlineKeyboardButton(text=country_name, callback_data=cb_data),
         )
 
-    # 5. Pagination navigation
+    # 4. Pagination navigation
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton(text="⬅️ قبلی", callback_data=f"v_page:{service_id}:{page - 1}"))
+        nav.append(InlineKeyboardButton(text="⬅️ قبلی", callback_data=f"v_page:{slug}:{page - 1}"))
     if end < len(countries):
-        nav.append(InlineKeyboardButton(text="بعدی ➡️", callback_data=f"v_page:{service_id}:{page + 1}"))
+        nav.append(InlineKeyboardButton(text="بعدی ➡️", callback_data=f"v_page:{slug}:{page + 1}"))
     if nav:
         builder.row(*nav)
 
-    # 6. Footer — back to application list
+    # 5. Footer — back to service list
     builder.row(InlineKeyboardButton(
         text="🔙 سرویس‌ها",
         callback_data="menu:virtual_number",

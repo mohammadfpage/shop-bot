@@ -111,40 +111,40 @@ async def _deliver_design(
 async def _deliver_virtual_number(
     bot: Bot, user_id: int, order_id: int, product: str, details: str
 ) -> None:
-    """Deliver a virtual number — call Ozvinoo API to purchase the number,
+    """Deliver a virtual number — call Shiznumber API to purchase the number,
     then poll for the SMS code and send it to the user.
 
-    If the Ozvinoo API fails AFTER payment, alert the admin immediately.
+    If the Shiznumber API fails AFTER payment, alert the admin immediately.
+
+    ``details`` format: "سرویس: {slug} | آیتم: {item_id}"
     """
     import asyncio
-    from utils.ozvinoo import buy_virtual_number, get_number_code
+    from utils.shiznumber import buy_virtual_number, get_number_code
 
-    # Parse service_id and country from details ("سرویس: N | کشور: name")
-    service_id = None
-    country = None
+    # Parse slug and item_id from details
+    slug = None
+    item_id = None
     if "سرویس:" in details and "|" in details:
         try:
-            service_part = details.split("|")[0].split("سرویس:")[1].strip()
-            country_part = details.split("|")[1].split("کشور:")[1].strip()
-            service_id = service_part
-            country = country_part
+            slug = details.split("|")[0].split("سرویس:")[1].strip()
+            item_id = details.split("|")[1].split("آیتم:")[1].strip()
         except (ValueError, IndexError):
             pass
 
-    if service_id is None or not country:
+    if not slug or not item_id:
         await _alert_delivery_failure(bot, user_id, order_id, product,
-                                      "شناسه سرویس یا کشور یافت نشد")
+                                      "شناسه سرویس یا آیتم یافت نشد")
         return
 
-    # Step 1: Purchase the number from Ozvinoo
-    result = await buy_virtual_number(service_id, country)
+    # Step 1: Purchase the number from Shiznumber
+    result = await buy_virtual_number(item_id)
 
-    if not result or result.get("error_code"):
-        error_msg = result.get("error_code", "خطای ناشناخته") if result else "خطا در اتصال"
+    if not result or result.get("error"):
+        error_msg = result.get("error", "خطای ناشناخته") if result else "خطا در اتصال"
         await _alert_delivery_failure(bot, user_id, order_id, product, error_msg)
         return
 
-    request_id = result.get("request_id", 0)
+    shiz_order_id = result.get("order_id", result.get("id", ""))
     number = result.get("number", "نامشخص")
 
     # Step 2: Send the number to the user
@@ -154,7 +154,7 @@ async def _deliver_virtual_number(
         f"{get_pe('sparkles')} <b>پرداخت موفق!</b>\n\n"
         f"{get_pe('key_lock')} <b>شماره مجازی شما:</b>\n"
         f"📱 شماره: <code>{number}</code>\n"
-        f"🌍 کشور: {country}\n\n"
+        f"🌍 سرویس: {slug}\n\n"
         "در حال دریافت کد تأیید... لطفاً صبر کنید.\n"
         "<i>حداکثر ۲ دقیقه زمان می‌برد.</i>",
     )
@@ -163,16 +163,16 @@ async def _deliver_virtual_number(
     code = None
     for attempt in range(24):  # 24 × 5s = 120s
         await asyncio.sleep(5)
-        code_result = await get_number_code(request_id)
+        code_result = await get_number_code(str(shiz_order_id))
 
         if code_result and code_result.get("code"):
             code = code_result.get("code", "")
             break
 
-        if code_result and code_result.get("error_code") not in ("wait_code", ""):
+        if code_result and code_result.get("status") not in ("waiting", "wait_code", ""):
             # Non-retryable error
-            await _alert_delivery_failure(bot, user_id, order_id, product,
-                                          code_result.get("error_code", "خطا"))
+            error_code = code_result.get("error", code_result.get("status", "خطا"))
+            await _alert_delivery_failure(bot, user_id, order_id, product, error_code)
             return
 
     if code:
@@ -182,7 +182,7 @@ async def _deliver_virtual_number(
             f"{get_pe('check')} <b>کد تأیید دریافت شد!</b>\n\n"
             f"📱 شماره: <code>{number}</code>\n"
             f"🔑 کد تأیید: <code>{code}</code>\n\n"
-            "از این کد برای فعال‌سازی حساب تلگرام خود استفاده کنید.\n"
+            "از این کد برای فعال‌سازی حساب خود استفاده کنید.\n"
             f"{get_pe('warning')} این کد محرمانه است، آن را با کسی به اشتراک نگذارید.",
         )
     else:
@@ -190,7 +190,7 @@ async def _deliver_virtual_number(
         await _alert_delivery_failure(
             bot, user_id, order_id, product,
             "کد تأیید ظرف ۲ دقیقه دریافت نشد",
-            extra_info=f"شماره: {number}\nشناسه سفارش Ozvinoo: {request_id}",
+            extra_info=f"شماره: {number}\nشناسه سفارش Shiznumber: {shiz_order_id}",
         )
 
 
@@ -240,7 +240,7 @@ async def _alert_delivery_failure(
     error_msg: str,
     extra_info: str = "",
 ) -> None:
-    """Alert both the user and admin when Ozvinoo delivery fails.
+    """Alert both the user and admin when Shiznumber delivery fails.
 
     The user is told their payment succeeded but delivery had an issue.
     The admin receives full transaction details for manual resolution.
@@ -283,6 +283,6 @@ async def _alert_delivery_failure(
 
     await _notify_admins(bot, admin_msg)
     logger.warning(
-        "Ozvinoo delivery failure for order #%s (user %s): %s",
+        "Shiznumber delivery failure for order #%s (user %s): %s",
         order_id, user_id, error_msg,
     )
