@@ -7,11 +7,11 @@ import contextlib
 import logging
 from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.filters import CommandStart, Command
 from aiogram.exceptions import TelegramBadRequest
 
-from database.db import get_or_create_user, get_user_orders, get_total_users
+from database.db import get_or_create_user, get_user_orders, get_total_users, update_user_phone, user_has_phone
 from states.states import VirtualNumberStates
 from keyboards.inline import (
     main_menu_kb,
@@ -31,23 +31,52 @@ router = Router(name="user")
 logger = logging.getLogger(__name__)
 
 
+# ─── Registration / Rules ───────────────────────────────────────────
+
+RULES_TEXT = (
+    "📌 <b>نکات لازم در هنگام خرید شماره مجازی:</b>\n\n"
+    "1️⃣ شماره های ستاره دار داخل لیست نوریپ و نوبن هستند و شماره های دارای لایک از کددهی سریعتری برخوردارند.\n"
+    "2️⃣ برای تلگرام از فیلترشکن رایگان استفاده نکنید و حتما از نسخه اصلی تلگرام استفاده کنید.\n"
+    "3️⃣ برای واتساپ سعی کنید به ip کشوری وصل شوید که قصد استفاده از شماره مجازی آن کشور را دارید !\n"
+    "4️⃣ حتما حتما لازم است که برنامه مورد نظر ، کد تایید ارسال کند . ممکن است متوجه نشوید که برای تایید شماره به شما تماس گرفته باشد ، پس حتما گزینه ارسال پیامک تایید را انتخاب کنید.\n"
+    "5️⃣ هر شماره تا 15 دقیقه قابلیت استفاده دارد و در این مدت تا هر چند تا کد که لازم دارید را می‌توانید دریافت کنید.\n\n"
+    "👇 جهت موافقت با قوانین و ورود به ربات، روی دکمه <b>«تایید قوانین و ارسال شماره»</b> کلیک کنید:"
+)
+
+
+def contact_request_kb() -> ReplyKeyboardMarkup:
+    """Reply keyboard with a single request_contact button for onboarding."""
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="📱 تایید قوانین و ارسال شماره", request_contact=True)]],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
+
+
 # ─── /start ──────────────────────────────────────────────────────────
 
 @router.message(CommandStart())
 async def cmd_start(message: Message) -> None:
     """Register the user and show the Ultimate Welcome Experience.
 
-    Sends a beautifully formatted Persian welcome message with:
-      • A persistent ReplyKeyboardMarkup at the bottom (navigation)
-      • An InlineKeyboardMarkup directly under the welcome text (quick actions)
-
-    For admins, appends a special admin hint.
+    If the user has NOT shared their phone number yet, show the rules
+    and a request_contact button instead of the main menu.
     """
-    await get_or_create_user(
+    user = await get_or_create_user(
         user_id=message.from_user.id,
         username=message.from_user.username,
         full_name=message.from_user.full_name,
     )
+
+    # ── Mandatory registration: check for phone number ──
+    has_phone = bool(user["phone_number"]) if user else False
+    if not has_phone:
+        # New user or user who hasn't shared contact yet — show rules
+        await message.answer(
+            RULES_TEXT,
+            reply_markup=contact_request_kb(),
+        )
+        return
 
     is_admin = await IsAdmin()(message)
 
@@ -96,6 +125,30 @@ async def cmd_start(message: Message) -> None:
             f"{get_pe('down')} از منوی زیر استفاده کنید:",
             reply_markup=main_reply_kb(),
         )
+
+
+# ─── Contact sharing (mandatory registration) ───────────────────────
+
+@router.message(F.contact)
+async def process_contact(message: Message) -> None:
+    """Handle shared contact — verify it belongs to the sender, save, and welcome."""
+    if message.contact.user_id != message.from_user.id:
+        await message.answer(
+            "⚠️ لطفاً شماره تماس <b>خودتان</b> را با استفاده از دکمه زیر ارسال کنید.",
+            reply_markup=contact_request_kb(),
+        )
+        return
+
+    phone_number = message.contact.phone_number
+    await update_user_phone(message.from_user.id, phone_number)
+
+    from keyboards.reply import main_reply_kb as _main_reply_kb
+
+    await message.answer(
+        f"✅ ثبت نام شما با موفقیت انجام شد و قوانین پذیرفته شد.\n"
+        f"به فروشگاه خوش آمدید!",
+        reply_markup=await _main_reply_kb(),
+    )
 
 
 # ─── WelcomeCallback handlers (inline buttons under welcome text) ────
@@ -273,12 +326,24 @@ async def cb_menu_security(callback: CallbackQuery) -> None:
 async def cb_menu_virtual_number(callback: CallbackQuery) -> None:
     """Show the ReplyKeyboard for virtual-number service selection."""
     try:
+        from utils.shiznumber import get_services_map
+        services_map = await get_services_map()
+
+        if not services_map:
+            with contextlib.suppress(TelegramBadRequest):
+                await callback.message.edit_text(
+                    "⚠️ ارتباط با سرور ارائه‌دهنده برقرار نشد. لطفاً کمی بعد تلاش کنید.",
+                    reply_markup=back_to_menu_kb(),
+                )
+            await callback.answer()
+            return
+
         text = (
             "📈 جهت خرید شماره مجازی لطفا نوع سرویس و پلتفرم مدنظر خود را "
             "از کیبورد پایین انتخاب نمایید؛"
         )
-        # Send a new message with the reply keyboard (reply keyboards can't be edited in)
-        await callback.message.answer(text, reply_markup=virtual_services_reply_kb())
+        # Send a new message with the dynamic reply keyboard
+        await callback.message.answer(text, reply_markup=virtual_services_reply_kb(services_map))
     except Exception as e:
         logger.error(f"CRASH IN MENU VIRTUAL: {e}", exc_info=True)
         with contextlib.suppress(TelegramBadRequest):
@@ -293,20 +358,30 @@ async def cb_menu_virtual_number(callback: CallbackQuery) -> None:
 async def process_shiz_service_selection(message: Message, state: FSMContext) -> None:
     """Handle a service tapped from the ReplyKeyboard.
 
-    Maps the button text to a Shiznumber slug, fetches countries
-    via the Shiznumber API, and displays them in an InlineKeyboardMarkup.
+    First tries the dynamic services map from the API; falls back to the
+    hardcoded ``SHIZ_SERVICES_MAP`` if the API map doesn't contain the text.
     """
-    slug = SHIZ_SERVICES_MAP[message.text]
+    from utils.shiznumber import get_services_map, get_service_numbers
+    from keyboards.inline import virtual_country_kb
+
+    services_map = await get_services_map()
+    slug = services_map.get(message.text) or SHIZ_SERVICES_MAP.get(message.text)
+    if not slug:
+        await message.answer(
+            "⚠️ سرویس نامعتبر. لطفاً از کیبورد پایین یکی را انتخاب کنید.",
+            reply_markup=virtual_services_reply_kb(services_map),
+        )
+        return
+
     await message.answer(f"⏳ در حال دریافت لیست کشورهای {message.text}...")
 
-    from utils.shiznumber import get_service_numbers
     countries = await get_service_numbers(slug)
 
     if not countries:
         await message.answer(
             "⚠️ در حال حاضر شماره‌ای برای این سرویس موجود نیست.\n"
             "لطفاً بعداً دوباره تلاش کنید.",
-            reply_markup=virtual_services_reply_kb(),
+            reply_markup=virtual_services_reply_kb(services_map),
         )
         return
 
@@ -315,8 +390,6 @@ async def process_shiz_service_selection(message: Message, state: FSMContext) ->
         virtual_slug=slug,
         virtual_countries=countries,
     )
-
-    from keyboards.inline import virtual_country_kb
 
     text = (
         f"🌐 سرویس {message.text} انتخاب شد.\n"
@@ -361,7 +434,7 @@ async def cb_app_selected(callback: CallbackQuery, state: FSMContext) -> None:
                 await callback.message.edit_text(
                     "⚠️ در حال حاضر شماره‌ای برای این سرویس موجود نیست.\n"
                     "لطفاً بعداً دوباره تلاش کنید.",
-                    reply_markup=virtual_services_kb(),
+                    reply_markup=await virtual_services_kb(),
                 )
             await callback.answer()
             return
@@ -388,7 +461,7 @@ async def cb_app_selected(callback: CallbackQuery, state: FSMContext) -> None:
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(
                 "⚠️ خطایی رخ داد. لطفاً دوباره تلاش کنید.",
-                reply_markup=virtual_services_kb(),
+                reply_markup=await virtual_services_kb(),
             )
         await callback.answer()
 
@@ -417,6 +490,7 @@ async def cb_virtual_country_page(callback: CallbackQuery, state: FSMContext) ->
 
         data = await state.get_data()
         countries = data.get("virtual_countries")
+        non_report = data.get("non_report", False)
 
         # Refresh if the cached list belongs to a different slug
         if not countries or data.get("virtual_slug") != slug:
@@ -431,14 +505,14 @@ async def cb_virtual_country_page(callback: CallbackQuery, state: FSMContext) ->
             with contextlib.suppress(TelegramBadRequest):
                 await callback.message.edit_text(
                     "⚠️ لیست کشورها منقضی شده است.",
-                    reply_markup=virtual_services_kb(),
+                    reply_markup=await virtual_services_kb(),
                 )
             await callback.answer()
             return
 
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_reply_markup(
-                reply_markup=virtual_country_kb(countries, slug, page=page)
+                reply_markup=virtual_country_kb(countries, slug, page=page, non_report=non_report)
             )
         await callback.answer()
     except Exception as e:
@@ -446,7 +520,7 @@ async def cb_virtual_country_page(callback: CallbackQuery, state: FSMContext) ->
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(
                 "⚠️ خطایی رخ داد. لطفاً دوباره تلاش کنید.",
-                reply_markup=virtual_services_kb(),
+                reply_markup=await virtual_services_kb(),
             )
         await callback.answer()
 
@@ -524,7 +598,7 @@ async def cb_virtual_buy(callback: CallbackQuery, state: FSMContext) -> None:
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(
                 "⚠️ خطایی رخ داد. لطفاً دوباره تلاش کنید.",
-                reply_markup=virtual_services_kb(),
+                reply_markup=await virtual_services_kb(),
             )
         await callback.answer()
 
@@ -556,18 +630,30 @@ async def cb_virtual_confirm_buy(callback: CallbackQuery, state: FSMContext) -> 
         final_irt = int(price_toman)
         base_price = data.get("base_price_toman", final_irt)
 
-        # ── Pre-purchase Shiznumber panel balance check ──
+        # ── Pre-purchase panel balance check (white-label) ──
         panel_balance = await get_panel_balance()
         if panel_balance < base_price:
-            with contextlib.suppress(TelegramBadRequest):
+            with contextlib.suppress(Exception):
                 await callback.message.edit_text(
-                    f"{get_pe('warning')} <b>موجودی پنل شیزنامبر کافی نیست.</b>\n\n"
-                    f"موجودی فعلی: <b>{panel_balance:,}</b> تومان\n"
-                    f"قیمت پایه شماره: <b>{base_price:,}</b> تومان\n\n"
-                    "لطفاً بعداً دوباره تلاش کنید.",
+                    f"{get_pe('warning')} <b>ارتباط با سرور موقتاً دچار اختلال شده است.</b>\n\n"
+                    "لطفاً دقایقی بعد دوباره تلاش کنید.",
                     reply_markup=back_to_menu_kb(),
                 )
             await state.clear()
+
+            # Silently alert admins with full details
+            from config import config as _cfg
+            for admin_id in _cfg.ADMIN_IDS:
+                with contextlib.suppress(Exception):
+                    await callback.message.bot.send_message(
+                        admin_id,
+                        f"🚨 <b>هشدار فوری:</b>\n"
+                        f"موجودی پنل برای خرید شماره مجازی کافی نیست!\n\n"
+                        f"💰 موجودی فعلی: <b>{panel_balance:,}</b> تومان\n"
+                        f"💵 مبلغ مورد نیاز: <b>{base_price:,}</b> تومان\n"
+                        f"🌍 سرویس: {slug} | آیتم: {item_id}\n"
+                        f"👤 کاربر: <code>{callback.from_user.id}</code>"
+                    )
             return
 
         order_id = await create_order(
@@ -637,6 +723,46 @@ async def cb_virtual_filter(callback: CallbackQuery) -> None:
 async def cb_virtual_bulk(callback: CallbackQuery) -> None:
     """Placeholder for the Bulk Purchase feature."""
     await callback.answer("خرید گروهی به زودی فعال می‌شود!", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("v_nr:"))
+async def cb_virtual_non_report(callback: CallbackQuery, state: FSMContext) -> None:
+    """Toggle the non-report number filter on/off and re-render the page."""
+    try:
+        parts = callback.data.split(":")
+        slug = parts[1]
+        current_state = parts[2] if len(parts) > 2 else "off"
+        new_state = "off" if current_state == "on" else "on"
+        non_report = new_state == "on"
+
+        data = await state.get_data()
+        countries = data.get("virtual_countries", [])
+
+        if not countries or data.get("virtual_slug") != slug:
+            from utils.shiznumber import get_service_numbers
+            countries = await get_service_numbers(slug)
+            await state.update_data(virtual_slug=slug, virtual_countries=countries)
+
+        if not countries:
+            with contextlib.suppress(TelegramBadRequest):
+                await callback.message.edit_text(
+                    "⚠️ لیست کشورها منقضی شده است.",
+                    reply_markup=await virtual_services_kb(),
+                )
+            await callback.answer()
+            return
+
+        await state.update_data(non_report=non_report)
+
+        with contextlib.suppress(TelegramBadRequest):
+            await callback.message.edit_reply_markup(
+                reply_markup=virtual_country_kb(countries, slug, page=0, non_report=non_report)
+            )
+        label = "فعال" if non_report else "غیرفعال"
+        await callback.answer(f"🔍 فیلتر غیرریپورت: {label}", show_alert=True)
+    except Exception as e:
+        logger.error(f"CRASH IN V_NR: {e}", exc_info=True)
+        await callback.answer("⚠️ خطا در تغییر فیلتر.", show_alert=True)
 
 
 # ─── Market Rates (Live Exchange Rates) ─────────────────────────────

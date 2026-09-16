@@ -410,21 +410,22 @@ def pay_link_kb(pay_url: str) -> InlineKeyboardMarkup:
 
 # ─── Virtual Number (Shiznumber API — "شماره مجازی") ────────────────
 
-def virtual_services_kb(apps_data: dict | None = None) -> InlineKeyboardMarkup:
+async def virtual_services_kb(services_map: dict[str, str] | None = None) -> InlineKeyboardMarkup:
     """Build the application-selection grid dynamically.
 
-    With the Shiznumber migration, the reply keyboard handles service
-    selection. This inline keyboard is kept as a fallback / legacy path.
+    If *services_map* is provided (fetched from the API), use it.
+    Otherwise fetches live data via ``get_services_map()``.
+    Falls back to the hardcoded map if the API is unreachable.
     """
-    from keyboards.reply import SHIZ_SERVICES_MAP
+    if services_map is None:
+        from utils.shiznumber import get_services_map
+        services_map = await get_services_map()
 
     builder = InlineKeyboardBuilder()
 
-    # Build inline buttons from SHIZ_SERVICES_MAP
-    items = list(SHIZ_SERVICES_MAP.items())
-    for persian_name, slug in items:
+    for display_name, slug in services_map.items():
         builder.row(
-            InlineKeyboardButton(text=persian_name, callback_data=f"v_app:{slug}")
+            InlineKeyboardButton(text=display_name, callback_data=f"v_app:{slug}")
         )
 
     builder.row(InlineKeyboardButton(
@@ -434,31 +435,43 @@ def virtual_services_kb(apps_data: dict | None = None) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def virtual_country_kb(countries: list, slug: str, page: int = 0) -> InlineKeyboardMarkup:
+def virtual_country_kb(
+    countries: list,
+    slug: str,
+    page: int = 0,
+    non_report: bool = False,
+) -> InlineKeyboardMarkup:
     """Build a paginated, table-style keyboard for virtual number purchase.
 
     Uses the Shiznumber item ``id`` for buy callbacks instead of the old
     Ozvinoo range-based system.
 
     Layout (exactly 10 countries per page):
-      Controls:  [🔍 فیلتر پیشرفته] [🔄 خرید گروهی]
-      Header:    [💰 قیمت] [موجودی] [🌍 نام کشور]
+      Controls:  [🚀 غیرریپورت] [🔍 فیلتر پیشرفته] [🔄 خرید گروهی]
+      Header:    [💰 قیمت] [📦 موجودی] [🌍 نام کشور]
       Data rows: [price] [count] [country_fa]  (id-based callback)
       Pagination:[⬅️ قبلی] [بعدی ➡️]
       Footer:    [🔙 سرویس‌ها] → back to service list
     """
     builder = InlineKeyboardBuilder()
 
-    # 1. Filter / Bulk controls
+    # 1. Filter / Non-Report / Bulk controls
+    nr_label = "🚀 شماره غیرریپورت ✅" if non_report else "🚀 شماره غیرریپورت"
+    builder.row(
+        InlineKeyboardButton(
+            text=nr_label,
+            callback_data=f"v_nr:{slug}:{'on' if non_report else 'off'}",
+        ),
+    )
     builder.row(
         InlineKeyboardButton(text="🔍 فیلتر پیشرفته", callback_data=f"v_filter:{slug}"),
         InlineKeyboardButton(text="🔄 خرید گروهی", callback_data=f"v_bulk:{slug}"),
     )
 
-    # 2. Header row
+    # 2. Header row (clean column headers)
     builder.row(
         InlineKeyboardButton(text="💰 قیمت", callback_data="ignore"),
-        InlineKeyboardButton(text="موجودی", callback_data="ignore"),
+        InlineKeyboardButton(text="📦 موجودی", callback_data="ignore"),
         InlineKeyboardButton(text="🌍 نام کشور", callback_data="ignore"),
     )
 
@@ -468,12 +481,15 @@ def virtual_country_kb(countries: list, slug: str, page: int = 0) -> InlineKeybo
     end = start + items_per_page
 
     for c in countries[start:end]:
-        status_text = f"{c['count']} عدد" if c["in_stock"] else "❌ ناموجود"
-        # Using the unique Shiznumber item 'id' for the buy callback
-        cb_data = f"v_buy:{c['id']}" if c["in_stock"] else "ignore"
-
         price = c.get("final_price", c.get("base_price", 0))
         country_name = c.get("country_fa", "نامشخص")[:15]
+
+        if c["in_stock"]:
+            status_text = f"✅ {c['count']} عدد"
+            cb_data = f"v_buy:{c['id']}"
+        else:
+            status_text = "🔴 ناموجود"
+            cb_data = "ignore"
 
         builder.row(
             InlineKeyboardButton(text=f"{price:,}", callback_data=cb_data),

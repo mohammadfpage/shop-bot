@@ -59,6 +59,7 @@ async def init_db() -> None:
                 user_id     BIGINT PRIMARY KEY,
                 username    TEXT,
                 full_name   TEXT,
+                phone_number TEXT,
                 is_admin    BOOLEAN DEFAULT FALSE,
                 joined_at   TEXT
             );
@@ -125,6 +126,14 @@ async def init_db() -> None:
                     "VALUES ($1, $2, $3) ON CONFLICT (product_key) DO NOTHING",
                     key, label, usd,
                 )
+        # Migrate: add phone_number column if missing (idempotent)
+        try:
+            await conn.execute(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_number TEXT"
+            )
+        except Exception:
+            pass  # column already exists or DB doesn't support IF NOT EXISTS
+
         logger.info("Database tables initialized.")
 
 
@@ -252,6 +261,24 @@ async def set_admin(user_id: int, is_admin: bool = True) -> None:
     await pool.execute(
         "UPDATE users SET is_admin = $1 WHERE user_id = $2", is_admin, user_id,
     )
+
+
+async def update_user_phone(user_id: int, phone_number: str) -> None:
+    """Save the user's phone number after they share it via request_contact."""
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE users SET phone_number = $1 WHERE user_id = $2",
+        phone_number, user_id,
+    )
+
+
+async def user_has_phone(user_id: int) -> bool:
+    """Return True if the user has already shared their phone number."""
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT phone_number FROM users WHERE user_id = $1", user_id,
+    )
+    return bool(row and row["phone_number"])
 
 
 async def get_all_users() -> list[asyncpg.Record]:

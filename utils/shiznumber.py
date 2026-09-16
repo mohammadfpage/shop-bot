@@ -15,6 +15,8 @@ Endpoints:
 """
 
 import logging
+import re
+import time
 from typing import Optional
 
 import aiohttp
@@ -24,6 +26,32 @@ from config import config
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://api.shiznumber.com/api"
+
+# ─── Dynamic Services Cache ────────────────────────────────────────
+_services_cache: dict[str, str] = {}  # {"تلگرام 💎": "telegram", ...}
+_services_cache_ts: float = 0.0
+_SERVICES_CACHE_TTL: float = 3600.0  # refresh every hour
+
+# Emoji mapping for popular apps (Persian substring → emoji)
+_EMOJI_MAP: dict[str, str] = {
+    "تلگرام": "💎",
+    "واتساپ": "✳️",
+    "اینستاگرام": "🚀",
+    "گوگل": "🔍",
+    "جیمیل": "🔍",
+    "فیسبوک": "📬",
+    "توییتر": "🐦",
+    "ایکس": "❎",
+    "تیک تاک": "⌚",
+    "مایکروسافت": "💻",
+    "اپل": "🍎",
+    "نتفلیکس": "💢",
+    "پیپال": "🧾",
+    "تیندر": "🔥",
+    "یاهو": "🌀",
+    "لاین": "🧩",
+    "دیسکورد": "🚹",
+}
 
 
 def _get_api_key() -> str:
@@ -40,9 +68,66 @@ def _get_headers() -> dict:
     }
 
 
-# ══════════════════════════════════════════════════════════════════════
-#  VIRTUAL NUMBERS (شماره مجازی)
-# ══════════════════════════════════════════════════════════════════════
+async def get_services_map() -> dict[str, str]:
+    """Fetch all available services from Shiznumber's GET /services endpoint.
+
+    Returns a dict mapping display names (with emoji) to slugs, e.g.:
+        {"تلگرام 💎": "telegram", "واتساپ ✳️": "whatsapp", ...}
+
+    Results are cached for one hour to avoid hammering the API.
+    Falls back to a minimal hardcoded map if the API is unreachable.
+    """
+    global _services_cache, _services_cache_ts
+
+    now = time.monotonic()
+    if _services_cache and (now - _services_cache_ts) < _SERVICES_CACHE_TTL:
+        return _services_cache
+
+    url = f"{BASE_URL}/services"
+    try:
+        timeout = aiohttp.ClientTimeout(total=15)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url, headers=_get_headers()) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if isinstance(data, list):
+                        result: dict[str, str] = {}
+                        for item in data:
+                            fa_name = item.get("fa_name", item.get("name", ""))
+                            slug = item.get("slug", "")
+                            if not fa_name or not slug:
+                                continue
+
+                            # Find matching emoji or use default
+                            emoji = next(
+                                (e for kw, e in _EMOJI_MAP.items() if kw in fa_name),
+                                "🔹",
+                            )
+                            display_name = f"{fa_name} {emoji}"
+                            result[display_name] = slug
+
+                        if result:
+                            _services_cache = result
+                            _services_cache_ts = now
+                            logger.info("Fetched %d services from Shiznumber API", len(result))
+                            return result
+    except Exception as exc:
+        logger.error("Error fetching services from Shiznumber: %s", exc)
+
+    # Fallback to hardcoded map if API fails (and cache is empty)
+    if not _services_cache:
+        _services_cache = {
+            "تلگрам 💎": "telegram",
+            "مایکروسافت 💻": "microsoft",
+            "تیندر 🔥": "tinder",
+            "واتساپ ✳️": "whatsapp",
+            "اینستاگرام 🚀": "instagram",
+            "فیسبوک 📬": "facebook",
+            "توییتر 🐦": "twitter",
+            "گوگل / جیمیل 🔍": "google",
+        }
+        _services_cache_ts = now
+    return _services_cache
 
 async def get_service_numbers(slug: str) -> list[dict]:
     """GET /services/{slug}/numbers — fetch available countries for a service.
@@ -69,9 +154,23 @@ async def get_service_numbers(slug: str) -> list[dict]:
                             price = int(item.get("price", 0))
                             country_data = item.get("country", {})
                             count = int(item.get("count", 0))
+
+                            # Clean provider tags (e.g. "shiz1", "shiz62") from names
+                            raw_name = country_data.get("fa_name", "نامشخص")
+                            clean_name = re.sub(r'\bshiz\d*\b', '', raw_name, flags=re.IGNORECASE).strip()
+                            if not clean_name:
+                                clean_name = raw_name  # fallback if stripping removed everything
+
+                            # Add quality emojis
+                            quality_emojis = "⭐👍"
+                            if "ایران" in clean_name:
+                                quality_emojis += " 🛡️"
+
+                            display_name = f"{clean_name} {quality_emojis}"
+
                             result.append({
                                 "id": str(item.get("id")),
-                                "country_fa": country_data.get("fa_name", "نامشخص"),
+                                "country_fa": display_name,
                                 "country_en": country_data.get("en_name", "Unknown"),
                                 "count": count,
                                 "base_price": price,
