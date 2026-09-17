@@ -122,7 +122,8 @@ def register_routers(dispatcher: Dispatcher) -> None:
     admin_router.callback_query.middleware(AdminSecurityMiddleware())
 
     dispatcher.include_routers(
-        user_router,       # Must be first to catch /start and reply keyboard buttons
+        admin_router,      # First so admin callbacks are never swallowed
+        user_router,       # /start and reply keyboard buttons
         rate_router,       # Exchange-rate cached response
         ticket_router,     # Ticket system (reply keyboard triggers)
         premium_router,
@@ -130,7 +131,6 @@ def register_routers(dispatcher: Dispatcher) -> None:
         ai_router,
         design_router,
         security_router,
-        admin_router,
         payment_router,
     )
 

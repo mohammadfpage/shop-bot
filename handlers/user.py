@@ -1097,10 +1097,3 @@ def _status_fa(status: str) -> str:
         "delivered": "تحویل شده",
         "cancelled": "لغو شده",
     }.get(status, status)
-
-
-@router.callback_query()
-async def unhandled_callback(callback: CallbackQuery) -> None:
-    """Catch-all for unrecognised callback_data — log silently, no alert."""
-    logger.warning("Unhandled callback_data: %s (user=%s)", callback.data, callback.from_user.id)
-    await callback.answer()
