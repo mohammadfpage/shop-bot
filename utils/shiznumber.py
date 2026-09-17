@@ -168,6 +168,9 @@ async def get_service_numbers(slug: str) -> list[dict]:
                             country_data = item.get("country", {})
                             count = int(item.get("count", 0))
 
+                            if count <= 0:
+                                continue  # Skip out-of-stock completely
+
                             # Clean provider tags (e.g. "shiz1", "shiz62") from names
                             raw_name = country_data.get("fa_name", "نامشخص")
                             clean_name = re.sub(r'\bshiz\d*\b', '', raw_name, flags=re.IGNORECASE).strip()
@@ -188,7 +191,7 @@ async def get_service_numbers(slug: str) -> list[dict]:
                                 "count": count,
                                 "base_price": price,
                                 "final_price": int(price * margin),
-                                "in_stock": count > 0,
+                                "in_stock": True,
                             })
                 else:
                     logger.warning(

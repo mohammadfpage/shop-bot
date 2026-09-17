@@ -53,50 +53,34 @@ def main_reply_kb() -> ReplyKeyboardMarkup:
 
 
 # ─── Virtual Number Services (Reply Keyboard) ──────────────────────
-# Shiznumber API — slugs instead of numeric IDs
-# The static map below is used as a fallback only; the live map is
-# fetched dynamically from the Shiznumber API via get_services_map().
-
-SHIZ_SERVICES_MAP = {
-    "تلگرام 💎": "telegram",
-    "مایکروسافت 💻": "microsoft",
-    "تیندر 🔥": "tinder",
-    "واتساپ ✳️": "whatsapp",
-    "اینستاگرام 🚀": "instagram",
-    "فیسبوک 📬": "facebook",
-    "توییتر 🐦": "twitter",
-    "گوگل / جیمیل 🔍": "google",
-}
-
-# Legacy alias — kept so other modules that import VIRTUAL_SERVICES_MAP
-# don't break at import time (they should migrate to SHIZ_SERVICES_MAP).
-VIRTUAL_SERVICES_MAP = SHIZ_SERVICES_MAP
+# Shiznumber API — slugs instead of numeric IDs.
+# The services map (display name → slug) is fetched live from the
+# Shiznumber API via get_services_map() and is always required here.
 
 
-def virtual_services_reply_kb(services_map: dict[str, str] | None = None) -> ReplyKeyboardMarkup:
+def virtual_services_reply_kb(services_map: dict[str, str]) -> ReplyKeyboardMarkup:
     """Build a ReplyKeyboardMarkup for virtual-number service selection.
 
-    If *services_map* is provided (fetched dynamically from the API),
-    those services are used.  Otherwise falls back to the hardcoded
-    ``SHIZ_SERVICES_MAP``.
+    Telegram is pinned to its own row, all other services are laid out
+    in a 2-column RTL grid, capped at ~200 buttons to stay within
+    Telegram's ReplyKeyboardMarkup size limits.
 
-    Layout (2-column RTL grid) with Telegram pinned to the top:
-      Row: تلگрам 💎
+    Layout:
+      Row: تلگرام 💎
       Row: واتساپ ✳️  |  اینستاگرام 🚀
       ...
       Footer: 🔙 بازگشت
     """
-    svc = services_map or SHIZ_SERVICES_MAP
     builder = ReplyKeyboardBuilder()
 
     # Pin Telegram to the top row if it exists
-    tg_key = next((k for k in svc if "تلگرام" in k), None)
+    tg_key = next((k for k in services_map.keys() if "تلگرام" in k), None)
     if tg_key:
         builder.row(KeyboardButton(text=tg_key))
 
-    # All other services in 2-column RTL grid
-    other_keys = [k for k in svc if k != tg_key]
-    buttons = [KeyboardButton(text=name) for name in other_keys]
+    # All other services in 2-column RTL grid (max 200 buttons)
+    other_apps = [name for name in services_map.keys() if name != tg_key]
+    buttons = [KeyboardButton(text=name) for name in other_apps][:200]
     for i in range(0, len(buttons), 2):
         builder.row(*buttons[i : i + 2][::-1])  # reversed for RTL
 

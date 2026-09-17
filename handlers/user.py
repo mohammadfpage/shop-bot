@@ -62,14 +62,14 @@ async def cmd_start(message: Message) -> None:
     If the user has NOT shared their phone number yet, show the rules
     and a request_contact button instead of the main menu.
     """
-    user = await get_or_create_user(
+    await get_or_create_user(
         user_id=message.from_user.id,
         username=message.from_user.username,
         full_name=message.from_user.full_name,
     )
 
     # ── Mandatory registration: check for phone number ──
-    has_phone = bool(user["phone_number"]) if user else False
+    has_phone = await user_has_phone(message.from_user.id)
     if not has_phone:
         # New user or user who hasn't shared contact yet — show rules
         await message.answer(
@@ -140,14 +140,17 @@ async def process_contact(message: Message) -> None:
         return
 
     phone_number = message.contact.phone_number
-    await update_user_phone(message.from_user.id, phone_number)
-
-    from keyboards.reply import main_reply_kb as _main_reply_kb
+    try:
+        await update_user_phone(message.from_user.id, phone_number)
+    except Exception as exc:
+        logger.error(
+            "Failed to save phone for user %s: %s", message.from_user.id, exc,
+        )
 
     await message.answer(
         f"✅ ثبت نام شما با موفقیت انجام شد و قوانین پذیرفته شد.\n"
         f"به فروشگاه خوش آمدید!",
-        reply_markup=await _main_reply_kb(),
+        reply_markup=main_reply_kb(),
     )
 
 
@@ -365,8 +368,7 @@ async def process_shiz_service_selection(
     """Handle a service tapped from the dynamic ReplyKeyboard.
 
     The ``IsDynamicService`` filter resolves the tapped text against the
-    live API services map (with the hardcoded ``SHIZ_SERVICES_MAP`` as a
-    fallback) and passes the matching slug as ``shiz_slug``.
+    live API services map and passes the matching slug as ``shiz_slug``.
     """
     from utils.shiznumber import get_service_numbers
     from utils.shiznumber import get_services_map

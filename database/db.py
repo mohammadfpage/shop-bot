@@ -59,6 +59,7 @@ async def init_db() -> None:
                 user_id        BIGINT PRIMARY KEY,
                 username       TEXT,
                 full_name      TEXT,
+                phone          VARCHAR(255),
                 phone_number   TEXT,
                 wallet_balance BIGINT DEFAULT 0,
                 is_admin       BOOLEAN DEFAULT FALSE,
@@ -127,6 +128,14 @@ async def init_db() -> None:
                     "VALUES ($1, $2, $3) ON CONFLICT (product_key) DO NOTHING",
                     key, label, usd,
                 )
+        # Migrate: add phone column if missing (idempotent)
+        try:
+            await conn.execute(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(255)"
+            )
+        except Exception:
+            pass  # column already exists or DB doesn't support IF NOT EXISTS
+
         # Migrate: add phone_number column if missing (idempotent)
         try:
             await conn.execute(
@@ -272,22 +281,57 @@ async def set_admin(user_id: int, is_admin: bool = True) -> None:
     )
 
 
-async def update_user_phone(user_id: int, phone_number: str) -> None:
-    """Save the user's phone number after they share it via request_contact."""
+async def update_user_phone(user_id: int, phone: str) -> None:
+    """Save the user's phone number after they share it via request_contact.
+
+    Ensures the ``phone`` column exists (idempotent) before writing, so a
+    legacy/missing schema can never crash the contact handler. The legacy
+    ``phone_number`` column is kept in sync for backwards compatibility.
+    """
     pool = await get_pool()
-    await pool.execute(
-        "UPDATE users SET phone_number = $1 WHERE user_id = $2",
-        phone_number, user_id,
-    )
+    async with pool.acquire() as conn:
+        try:
+            await conn.execute(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(255)"
+            )
+        except Exception:
+            pass  # column already exists or ADD COLUMN IF NOT EXISTS unsupported
+        await conn.execute(
+            "UPDATE users SET phone = $1 WHERE user_id = $2", phone, user_id,
+        )
+        try:
+            await conn.execute(
+                "UPDATE users SET phone_number = $1 WHERE user_id = $2",
+                phone, user_id,
+            )
+        except Exception:
+            pass  # legacy column may not exist on very old schemas
 
 
 async def user_has_phone(user_id: int) -> bool:
-    """Return True if the user has already shared their phone number."""
+    """Return True if the user has already shared their phone number.
+
+    Checks the ``phone`` column first, falling back to the legacy
+    ``phone_number`` column so freshly migrated rows are recognized.
+    """
     pool = await get_pool()
-    row = await pool.fetchrow(
-        "SELECT phone_number FROM users WHERE user_id = $1", user_id,
-    )
-    return bool(row and row["phone_number"])
+    try:
+        row = await pool.fetchrow(
+            "SELECT COALESCE(NULLIF(phone, ''), NULLIF(phone_number, '')) AS p "
+            "FROM users WHERE user_id = $1",
+            user_id,
+        )
+        if row and row["p"]:
+            return True
+    except Exception:
+        pass  # phone column may not exist yet — fall back below
+    try:
+        row = await pool.fetchrow(
+            "SELECT phone_number FROM users WHERE user_id = $1", user_id,
+        )
+        return bool(row and row["phone_number"])
+    except Exception:
+        return False
 
 
 # ─── Wallet helpers ──────────────────────────────────────────────────
