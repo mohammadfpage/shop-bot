@@ -9,9 +9,9 @@ Numbers are identified by a unique `id` returned from the numbers list.
 
 Endpoints:
     GET  /api/services/{slug}/numbers        → list available countries/numbers
-    POST /api/order/{item_id}                → purchase a virtual number
+    POST /api/numbers/{item_id}              → purchase a virtual number
     GET  /api/code/{order_id}                → fetch the SMS verification code
-    GET  /api/balance                        → fetch panel balance
+    GET  /api/user                           → fetch panel balance (nested)
 """
 
 import logging
@@ -168,25 +168,34 @@ async def get_service_numbers(slug: str) -> list[dict]:
     return result
 
 
-async def buy_virtual_number(item_id: str) -> Optional[dict]:
-    """POST /order/{item_id} — purchase a virtual number by its unique item ID.
+async def order_virtual_number(item_id: str) -> Optional[dict]:
+    """POST /numbers/{item_id} — securely purchase a virtual number.
 
-    The item_id is the unique `id` returned from get_service_numbers().
+    According to the Shiznumber docs the purchase endpoint is
+    ``POST /api/numbers/{id}``, which responds with:
+        {"order": {"id": <order_id>, "ordered_number": "...", ...}}
 
     Returns:
-        Raw JSON dict with 'order_id', 'number', 'price', etc.
-        Or {'error': '...'} on failure. None on connection errors.
+        The ``order`` dict on success, or None on failure
+        (HTTP 422/404/402, missing order, connection errors, ...).
     """
-    url = f"{BASE_URL}/order/{item_id}"
+    url = f"{BASE_URL}/numbers/{item_id}"
     try:
         headers = _get_headers()
         timeout = aiohttp.ClientTimeout(total=15)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(url, headers=headers) as resp:
-                return await resp.json()
+                if resp.status == 200:
+                    data = await resp.json()
+                    if isinstance(data, dict):
+                        return data.get("order")
+                    return None
+                logger.warning(
+                    "Shiznumber POST /numbers/%s returned HTTP %s", item_id, resp.status
+                )
     except Exception as exc:
-        logger.error("Shiznumber buy failed (item_id=%s): %s", item_id, exc)
-        return None
+        logger.error("Shiznumber order failed (item_id=%s): %s", item_id, exc)
+    return None
 
 
 async def get_number_code(order_id: str) -> Optional[dict]:
@@ -210,22 +219,27 @@ async def get_number_code(order_id: str) -> Optional[dict]:
 
 
 async def get_panel_balance() -> int:
-    """GET /balance — fetch the Shiznumber panel balance.
+    """GET /user — fetch the Shiznumber panel balance.
 
-    Returns the balance as an integer, or 0 if the request fails.
+    Shiznumber nests the balance under the user object, e.g.:
+        {"user": {"balance": 27200}}
+
+    Returns the balance as an integer, or 0 if the request fails or the
+    balance key is missing. A correct parse here prevents false
+    "Insufficient Panel Balance" errors before purchase.
     """
-    url = f"{BASE_URL}/balance"
+    url = f"{BASE_URL}/user"
     try:
         headers = _get_headers()
         timeout = aiohttp.ClientTimeout(total=10)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(url, headers=headers) as resp:
-                data = await resp.json()
-                if isinstance(data, dict) and "balance" in data:
-                    return int(data["balance"])
-                elif isinstance(data, (int, float, str)):
-                    return int(data)
-                return 0
+                if resp.status == 200:
+                    data = await resp.json()
+                    if isinstance(data, dict):
+                        user = data.get("user") or {}
+                        return int(user.get("balance", 0) or 0)
+                logger.warning("Shiznumber GET /user returned HTTP %s", resp.status)
     except Exception as e:
         logger.error("Error fetching Shiznumber balance: %s", e)
-        return 0
+    return 0

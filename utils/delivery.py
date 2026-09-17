@@ -9,6 +9,7 @@ Both paths converge here so the delivery logic is never duplicated.
 All user-facing text in Persian (فارسی).
 """
 
+import asyncio
 import logging
 import random
 from typing import Optional
@@ -145,118 +146,121 @@ async def _deliver_design(
 
 
 async def _deliver_virtual_number(
-    bot: Bot, user_id: int, order_id: int, product: str, details: str
+    bot: Bot, user_id: int, order_id: int, product_name: str, details: str
 ) -> None:
-    """Deliver a virtual number — call Shiznumber API to purchase the number,
-    then poll for the SMS code and send it to the user.
+    """Deliver a purchased virtual number from Shiznumber — with auto-refund.
 
-    If the Shiznumber API fails AFTER payment, alert the admin immediately.
+    Called ONLY after the user has paid (Zarinpal gateway or bot wallet).
+    First attempts a real purchase on Shiznumber; if that fails, the full
+    ``amount_irt`` is refunded back to the user's wallet and both the user
+    and the admins are notified. The bot never keeps money for a number
+    it could not deliver.
+
+    On success the number is sent to the user and a background task polls
+    the API for the SMS verification code every 5 seconds.
 
     ``details`` format: "سرویس: {slug} | آیتم: {item_id}"
     """
-    import asyncio
-    from utils.shiznumber import buy_virtual_number, get_number_code
+    import re
 
-    # Parse slug and item_id from details
-    slug = None
-    item_id = None
-    if "سرویس:" in details and "|" in details:
-        try:
-            slug = details.split("|")[0].split("سرویس:")[1].strip()
-            item_id = details.split("|")[1].split("آیتم:")[1].strip()
-        except (ValueError, IndexError):
-            pass
+    from utils.shiznumber import order_virtual_number
+    from database.db import update_order_status, add_to_wallet, get_user_orders
 
-    if not slug or not item_id:
+    # Extract item_id from details (e.g. "سرویس: telegram | آیتم: 57172")
+    match = re.search(r"آیتم:\s*(\d+)", details)
+    if not match:
         logger.error(
-            "Virtual delivery failed: could not parse slug/item_id from details='%s' (order #%s)",
+            "Virtual delivery: could not parse item_id from details='%s' (order #%s)",
             details, order_id,
         )
-        await _alert_delivery_failure(bot, user_id, order_id, product,
-                                      "شناسه سرویس یا آیتم یافت نشد")
+        return
+    item_id = match.group(1)
+
+    # Attempt actual API purchase
+    api_order = await order_virtual_number(item_id)
+
+    if not api_order:
+        # PURCHASE FAILED — INITIATE AUTO-REFUND
+        await update_order_status(order_id, "cancelled")
+
+        # Get the order to find the exact final price paid
+        orders = await get_user_orders(user_id)
+        current_order = next((o for o in orders if o["order_id"] == order_id), None)
+
+        if current_order and current_order.get("amount_irt"):
+            refund_amount = current_order["amount_irt"]
+            await add_to_wallet(user_id, refund_amount)
+
+            from keyboards.inline import back_to_menu_kb
+            await bot.send_message(
+                user_id,
+                f"❌ <b>خطا در دریافت شماره!</b>\n\n"
+                f"متاسفانه در لحظه خرید شما، موجودی این شماره در سرور به پایان رسید یا خطایی رخ داد.\n"
+                f"✅ مبلغ <b>{refund_amount:,} تومان</b> کاملاً به کیف پول شما در ربات بازگشت داده شد.",
+                reply_markup=back_to_menu_kb()
+            )
+
+            # Notify Admins
+            from config import config
+            for admin in config.ADMIN_IDS:
+                try:
+                    await bot.send_message(admin, f"🚨 <b>کنسلی خودکار سفارش {order_id}</b>\nمبلغ {refund_amount:,} تومان به کیف پول کاربر {user_id} برگشت داده شد. (خطای API شیزنامبر)")
+                except Exception:
+                    pass
         return
 
-    # Step 1: Purchase the number from Shiznumber (with timeout protection)
-    try:
-        result = await asyncio.wait_for(buy_virtual_number(item_id), timeout=30)
-    except asyncio.TimeoutError:
-        logger.error(
-            "Shiznumber buy_virtual_number timed out (item_id=%s, order #%s)",
-            item_id, order_id,
-        )
-        await _alert_delivery_failure(
-            bot, user_id, order_id, product,
-            "اتصال به سرویس با تایم‌اوت مواجه شد",
-        )
-        return
+    # PURCHASE SUCCESSFUL
+    await update_order_status(order_id, "delivered")
+    api_order_id = api_order.get("id")
+    number = api_order.get("ordered_number")
 
-    if not result:
-        logger.error(
-            "Shiznumber buy_virtual_number returned None (item_id=%s, order #%s)",
-            item_id, order_id,
-        )
-        await _alert_delivery_failure(bot, user_id, order_id, product, "خطا در اتصال به سرویس")
-        return
-
-    if result.get("error"):
-        error_msg = str(result["error"])
-        logger.warning(
-            "Shiznumber buy failed (item_id=%s, order #%s): %s",
-            item_id, order_id, error_msg,
-        )
-        # Provide user-friendly error mapping (white-label — no provider names)
-        if "balance" in error_msg.lower() or "موجودی" in error_msg:
-            friendly = "خطا در تهیه شماره — لطفاً بعداً دوباره تلاش کنید"
-        elif "not found" in error_msg.lower() or "یافت نشد" in error_msg:
-            friendly = "شماره مورد نظر دیگر موجود نیست"
-        else:
-            friendly = "خطایی در فرآیند خرید رخ داد"
-        await _alert_delivery_failure(bot, user_id, order_id, product, friendly)
-        return
-
-    shiz_order_id = result.get("order_id", result.get("id", ""))
-    number = result.get("number", "نامشخص")
-
-    # Step 2: Send the number to the user
+    # Send the number to the user and initiate a background task that polls
+    # the API every 5 seconds for the SMS verification code.
     await _safe_send(
         bot,
         user_id,
         f"{get_pe('sparkles')} <b>پرداخت موفق!</b>\n\n"
         f"{get_pe('key_lock')} <b>شماره مجازی شما:</b>\n"
-        f"📱 شماره: <code>{number}</code>\n"
-        f"🌍 سرویس: {slug}\n\n"
+        f"📱 شماره: <code>{number}</code>\n\n"
         "در حال دریافت کد تأیید... لطفاً صبر کنید.\n"
         "<i>حداکثر ۲ دقیقه زمان می‌برد.</i>",
     )
+    asyncio.create_task(
+        _poll_sms_code(bot, user_id, order_id, number, api_order_id)
+    )
 
-    # Step 3: Poll for the SMS code (up to 2 minutes, every 5 seconds)
+
+async def _poll_sms_code(
+    bot: Bot, user_id: int, order_id: int, number: str, api_order_id: str
+) -> None:
+    """Background task — poll Shiznumber every 5s (up to 2 minutes) for the SMS code."""
     code = None
-    for attempt in range(24):  # 24 × 5s = 120s
-        await asyncio.sleep(5)
-        try:
-            code_result = await asyncio.wait_for(
-                get_number_code(str(shiz_order_id)), timeout=15
-            )
-        except asyncio.TimeoutError:
-            logger.warning(
-                "SMS code poll timed out (attempt %d, order #%s)",
-                attempt + 1, order_id,
-            )
-            continue
+    try:
+        from utils.shiznumber import get_number_code
 
-        if code_result and code_result.get("code"):
-            code = code_result.get("code", "")
-            break
+        for _ in range(24):  # 24 × 5s = 120s
+            await asyncio.sleep(5)
+            try:
+                result = await asyncio.wait_for(
+                    get_number_code(str(api_order_id)), timeout=15
+                )
+            except asyncio.TimeoutError:
+                continue
+            except Exception as exc:
+                logger.warning(
+                    "SMS code poll request failed (order #%s): %s", order_id, exc,
+                )
+                continue
 
-        if code_result and code_result.get("status") not in ("waiting", "wait_code", ""):
-            # Non-retryable error
-            error_code = code_result.get("error", code_result.get("status", "خطا"))
-            logger.warning(
-                "Non-retryable SMS code status for order #%s: %s",
-                order_id, error_code,
-            )
-            await _alert_delivery_failure(bot, user_id, order_id, product, error_code)
-            return
+            if not result:
+                continue
+            if result.get("code"):
+                code = result.get("code", "")
+                break
+            if result.get("status") not in ("waiting", "wait_code", "", None):
+                break
+    except Exception as exc:
+        logger.warning("SMS code polling task crashed (order #%s): %s", order_id, exc)
 
     if code:
         await _safe_send(
@@ -269,11 +273,11 @@ async def _deliver_virtual_number(
             f"{get_pe('warning')} این کد محرمانه است، آن را با کسی به اشتراک نگذارید.",
         )
     else:
-        # Code not received within timeout
+        # Code not received within timeout — alert the user and the admins.
         await _alert_delivery_failure(
-            bot, user_id, order_id, product,
+            bot, user_id, order_id, "شماره مجازی",
             "کد تأیید ظرف ۲ دقیقه دریافت نشد",
-            extra_info=f"شماره: {number}\nشناسه سفارش: {shiz_order_id}",
+            extra_info=f"شماره: {number}\nشناسه سفارش: {api_order_id}",
         )
 
 
