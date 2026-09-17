@@ -69,7 +69,7 @@ def virtual_services_reply_kb(services_map: dict[str, str]) -> ReplyKeyboardMark
     """Build a ReplyKeyboardMarkup for virtual-number service selection.
 
     Telegram is pinned to its own row, all other services are laid out
-    in a 2-column RTL grid, capped at ~200 buttons to stay within
+    in a 2-column RTL grid, capped at 150 buttons to stay within
     Telegram's ReplyKeyboardMarkup size limits.
 
     Layout:
@@ -85,9 +85,9 @@ def virtual_services_reply_kb(services_map: dict[str, str]) -> ReplyKeyboardMark
     if tg_key:
         builder.row(KeyboardButton(text=tg_key))
 
-    # All other services in 2-column RTL grid (max 200 buttons)
+    # All other services in 2-column RTL grid (max 150 buttons)
     other_apps = [name for name in services_map.keys() if name != tg_key]
-    buttons = [KeyboardButton(text=name) for name in other_apps][:200]
+    buttons = [KeyboardButton(text=name) for name in other_apps][:150]
     for i in range(0, len(buttons), 2):
         builder.row(*buttons[i : i + 2][::-1])  # reversed for RTL
 

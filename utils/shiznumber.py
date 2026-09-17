@@ -32,27 +32,6 @@ _services_cache: dict[str, str] = {}  # {"تلگرام 💎": "telegram", ...}
 _services_cache_ts: float = 0.0
 _SERVICES_CACHE_TTL: float = 3600.0  # refresh every hour
 
-# Emoji mapping for popular apps (Persian substring → emoji)
-_EMOJI_MAP: dict[str, str] = {
-    "تلگرام": "💎",
-    "واتساپ": "✳️",
-    "اینستاگرام": "🚀",
-    "گوگل": "🔍",
-    "جیمیل": "🔍",
-    "فیسبوک": "📬",
-    "توییتر": "🐦",
-    "ایکس": "❎",
-    "تیک تاک": "⌚",
-    "مایکروسافت": "💻",
-    "اپل": "🍎",
-    "نتفلیکس": "💢",
-    "پیپال": "🧾",
-    "تیندر": "🔥",
-    "یاهو": "🌀",
-    "لاین": "🧩",
-    "دیسکورد": "🚹",
-}
-
 
 def _get_api_key() -> str:
     """Get the Shiznumber API key from config."""
@@ -69,13 +48,13 @@ def _get_headers() -> dict:
 
 
 async def get_services_map() -> dict[str, str]:
-    """Fetch all available services from Shiznumber's GET /services endpoint.
+    """Fetch ALL services from Shiznumber's GET /services endpoint.
 
     Returns a dict mapping display names (with emoji) to slugs, e.g.:
         {"تلگرام 💎": "telegram", "واتساپ ✳️": "whatsapp", ...}
 
     Results are cached for one hour to avoid hammering the API.
-    Falls back to a minimal hardcoded map if the API is unreachable.
+    No hardcoded fallback — if the API is unreachable, returns {}.
     """
     global _services_cache, _services_cache_ts
 
@@ -93,18 +72,21 @@ async def get_services_map() -> dict[str, str]:
                     if isinstance(data, list):
                         result: dict[str, str] = {}
                         for item in data:
-                            fa_name = item.get("fa_name", item.get("name", ""))
+                            name = item.get("fa_name", item.get("name", ""))
                             slug = item.get("slug", "")
-                            if not fa_name or not slug:
+                            if not name or not slug:
                                 continue
 
-                            # Find matching emoji or use default
-                            emoji = next(
-                                (e for kw, e in _EMOJI_MAP.items() if kw in fa_name),
-                                "🔹",
-                            )
-                            display_name = f"{fa_name} {emoji}"
-                            result[display_name] = slug
+                            if "تلگرام" in name:
+                                name += " 💎"
+                            elif "واتساپ" in name:
+                                name += " ✳️"
+                            elif "اینستاگرام" in name:
+                                name += " 🚀"
+                            else:
+                                name += " 🔹"
+
+                            result[name] = slug
 
                         if result:
                             _services_cache = result
@@ -114,19 +96,6 @@ async def get_services_map() -> dict[str, str]:
     except Exception as exc:
         logger.error("Error fetching services from Shiznumber: %s", exc)
 
-    # Fallback to hardcoded map if API fails (and cache is empty)
-    if not _services_cache:
-        _services_cache = {
-            "تلگرام 💎": "telegram",
-            "مایکروسافت 💻": "microsoft",
-            "تیندر 🔥": "tinder",
-            "واتساپ ✳️": "whatsapp",
-            "اینستاگرام 🚀": "instagram",
-            "فیسبوک 📬": "facebook",
-            "توییتر 🐦": "twitter",
-            "گوگل / جیمیل 🔍": "google",
-        }
-        _services_cache_ts = now
     return _services_cache
 
 
@@ -168,30 +137,23 @@ async def get_service_numbers(slug: str) -> list[dict]:
                             country_data = item.get("country", {})
                             count = int(item.get("count", 0))
 
+                            # STRICT REQUIREMENT: NEVER append out-of-stock items
                             if count <= 0:
-                                continue  # Skip out-of-stock completely
+                                continue
 
                             # Clean provider tags (e.g. "shiz1", "shiz62") from names
                             raw_name = country_data.get("fa_name", "نامشخص")
-                            clean_name = re.sub(r'\bshiz\d*\b', '', raw_name, flags=re.IGNORECASE).strip()
+                            clean_name = re.sub(r'shiz\d*', '', raw_name, flags=re.IGNORECASE).strip()
                             if not clean_name:
                                 clean_name = raw_name  # fallback if stripping removed everything
 
-                            # Add quality emojis — only for Telegram numbers
-                            if slug == "telegram":
-                                quality_emojis = "👍"  # like = all Telegram numbers
-                                # ⭐ (star) = non-report indicator — shown as separate marker
-                                if item.get("non_report", False):
-                                    quality_emojis = "⭐👍"
-                                if "ایران" in clean_name:
-                                    quality_emojis += " 🛡️"
-                                display_name = f"{clean_name} {quality_emojis}"
-                            else:
-                                display_name = clean_name
+                            emojis = "⭐👍"
+                            if "ایران" in clean_name:
+                                emojis += " 🛡️"
 
                             result.append({
                                 "id": str(item.get("id")),
-                                "country_fa": display_name,
+                                "country_fa": f"{clean_name} {emojis}",
                                 "country_en": country_data.get("en_name", "Unknown"),
                                 "count": count,
                                 "base_price": price,

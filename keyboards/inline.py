@@ -466,6 +466,8 @@ def virtual_country_kb(
     )
 
     # 3. Data rows (10 per page)
+    # Every item passed here is guaranteed in-stock (out-of-stock items are
+    # filtered out at the API level), so every row is a buy action.
     items_per_page = 10
     start = page * items_per_page
     end = start + items_per_page
@@ -474,24 +476,16 @@ def virtual_country_kb(
         price = c.get("final_price", c.get("base_price", 0))
         country_name = c.get("country_fa", "نامشخص")[:15]
 
-        if c["in_stock"]:
-            status_text = f"✅ {c['count']} عدد"
-            cb_data = f"v_buy:{c['id']}"
-            btn_style = "success"
-            btn_icon = get_premium_id("check")
-        else:
-            status_text = "🔴 ناموجود"
-            cb_data = "ignore"
-            btn_style = "danger"
-            btn_icon = get_premium_id("cross")
+        cb_data = f"v_buy:{c['id']}"
+        status_text = f"✅ {c['count']} عدد"
 
         builder.row(
             InlineKeyboardButton(text=f"💰 {price:,}", callback_data=cb_data,
-                                style=btn_style, icon_custom_emoji_id=btn_icon),
+                                style="success", icon_custom_emoji_id=get_premium_id("check")),
             InlineKeyboardButton(text=status_text, callback_data=cb_data,
-                                style=btn_style, icon_custom_emoji_id=btn_icon),
+                                style="success", icon_custom_emoji_id=get_premium_id("check")),
             InlineKeyboardButton(text=f"🌍 {country_name}", callback_data=cb_data,
-                                style=btn_style, icon_custom_emoji_id=btn_icon),
+                                style="success", icon_custom_emoji_id=get_premium_id("check")),
         )
 
     # 4. Pagination navigation

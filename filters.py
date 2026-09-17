@@ -86,8 +86,7 @@ class IsDynamicService(BaseFilter):
     """Pass only for reply-keyboard taps that match a virtual-number service.
 
     Resolves ``message.text`` against the live Shiznumber services map
-    (``get_services_map()``, which itself falls back to a small built-in
-    map when the API is unreachable). On a match the handler receives the
+    (``get_services_map()``). On a match the handler receives the
     resolved slug as an extra keyword argument ``shiz_slug``.
 
     The services map is cached for one hour, so this filter stays cheap
