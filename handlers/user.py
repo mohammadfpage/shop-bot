@@ -12,7 +12,7 @@ from aiogram.filters import CommandStart, Command
 from aiogram.exceptions import TelegramBadRequest
 
 from database.db import get_or_create_user, get_user_orders, get_total_users, update_user_phone, user_has_phone, get_wallet_balance
-from states.states import VirtualNumberStates
+from states.states import VirtualNumberStates, WalletStates, TicketStates
 from keyboards.inline import (
     main_menu_kb,
     back_to_menu_kb,
@@ -500,7 +500,7 @@ async def cb_app_selected(callback: CallbackQuery, state: FSMContext) -> None:
 
         from utils.shiznumber import get_service_numbers
         from keyboards.inline import virtual_country_kb, virtual_services_kb
-        from states.states import VirtualNumberStates
+        from states.states import VirtualNumberStates, WalletStates, TicketStates
 
         await callback.message.edit_text("⏳ در حال دریافت لیست کشورها...")
 

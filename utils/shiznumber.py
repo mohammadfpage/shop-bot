@@ -134,27 +134,25 @@ async def get_service_numbers(slug: str) -> list[dict]:
                     if isinstance(data, list):
                         for item in data:
                             price = int(item.get("price", 0))
-                            country_data = item.get("country", {})
                             count = int(item.get("count", 0))
 
-                            # STRICT REQUIREMENT: NEVER append out-of-stock items
+                            # Strictly drop out-of-stock items
                             if count <= 0:
                                 continue
 
-                            # Clean provider tags (e.g. "shiz1", "shiz62") from names
-                            raw_name = country_data.get("fa_name", "نامشخص")
-                            clean_name = re.sub(r'shiz\d*', '', raw_name, flags=re.IGNORECASE).strip()
+                            # Remove "shiz" + numbers, but keep the natural API emojis intact
+                            raw_name = item.get("country", {}).get(
+                                "fa_name", item.get("fa_name", "نامشخص")
+                            )
+                            clean_name = re.sub(
+                                r'shiz\d*', '', raw_name, flags=re.IGNORECASE
+                            ).strip()
                             if not clean_name:
                                 clean_name = raw_name  # fallback if stripping removed everything
 
-                            emojis = "⭐👍"
-                            if "ایران" in clean_name:
-                                emojis += " 🛡️"
-
                             result.append({
                                 "id": str(item.get("id")),
-                                "country_fa": f"{clean_name} {emojis}",
-                                "country_en": country_data.get("en_name", "Unknown"),
+                                "country_fa": clean_name,  # Exactly what the API sent!
                                 "count": count,
                                 "base_price": price,
                                 "final_price": int(price * margin),

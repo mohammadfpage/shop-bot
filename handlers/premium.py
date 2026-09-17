@@ -15,7 +15,16 @@ from states.states import TelegramPremiumStates
 from utils.pricing import price_display, price_display_raw
 from utils.zarinpal import request_payment
 from utils.emojis import get_pe
-from database.db import create_order, update_order_amount, create_payment, update_payment_authority, get_price_or_default
+from utils.delivery import deliver_product
+from database.db import (
+    create_order,
+    create_payment,
+    update_payment_authority,
+    update_order_status,
+    get_price_or_default,
+    get_wallet_balance,
+    deduct_from_wallet,
+)
 from keyboards.inline import (
     premium_duration_kb,
     premium_target_kb,
@@ -91,16 +100,17 @@ async def cb_choose_target(callback: CallbackQuery, state: FSMContext) -> None:
     target = callback.data.split(":")[2]
 
     if target == "self":
+        # For myself — use the sender's own ID, never ask for it.
         await state.update_data(target_user=callback.from_user.id, target_label="خودم")
         await _initiate_payment(callback, state)
     else:
         await state.set_state(TelegramPremiumStates.enter_other_id)
-    with contextlib.suppress(TelegramBadRequest):
-        await callback.message.edit_text(
-            f"{get_pe('users')} لطفاً <b>شناسه کاربری تلگرام</b> دریافت‌کننده را ارسال کنید.\n"
-            "(فقط شناسه عددی — مثال: <code>123456789</code>)",
-            reply_markup=back_to_menu_kb(),
-        )
+        with contextlib.suppress(TelegramBadRequest):
+            await callback.message.edit_text(
+                f"{get_pe('users')} لطفاً <b>شناسه کاربری تلگرام</b> دریافت‌کننده را ارسال کنید.\n"
+                "(فقط شناسه عددی — مثال: <code>123456789</code>)",
+                reply_markup=back_to_menu_kb(),
+            )
     await callback.answer()
 
 
@@ -127,20 +137,62 @@ async def _initiate_payment(callback: CallbackQuery, state: FSMContext) -> None:
     target_label = data["target_label"]
 
     final_irt, rate = await price_display_raw(usd)
+    wallet_balance = await get_wallet_balance(callback.from_user.id)
+    shortage = final_irt - wallet_balance
+    order_details = f"دریافت‌کننده: {target_label}"
+
+    if shortage <= 0:
+        # Wallet covers the full price — bypass Zarinpal and deliver now.
+        if not await deduct_from_wallet(callback.from_user.id, final_irt):
+            with contextlib.suppress(TelegramBadRequest):
+                await callback.message.edit_text(
+                    f"{get_pe('cross')} موجودی کیف پول شما کافی نیست.\n"
+                    "لطفاً کیف پول خود را شارژ کنید یا دوباره تلاش کنید.",
+                    reply_markup=back_to_menu_kb(),
+                )
+            await state.clear()
+            return
+
+        order_id = await create_order(
+            user_id=callback.from_user.id,
+            product=product,
+            details=order_details,
+            amount_irt=final_irt,
+        )
+        await update_order_status(order_id, "paid")
+
+        with contextlib.suppress(TelegramBadRequest):
+            await callback.message.edit_text(
+                f"{get_pe('purse')} <b>پرداخت از کیف پول انجام شد!</b>\n\n"
+                f"{get_pe('user')} دریافت‌کننده: {target_label}\n"
+                f"{get_pe('money')} مبلغ کسر شده: <b>{final_irt:,} تومان</b>\n\n"
+                "در حال تحویل محصول…",
+                reply_markup=None,
+            )
+        await deliver_product(
+            bot=callback.bot,
+            user_id=callback.from_user.id,
+            order_id=order_id,
+            product=product,
+            details=order_details,
+        )
+        await state.clear()
+        return
 
     order_id = await create_order(
         user_id=callback.from_user.id,
         product=product,
-        details=f"دریافت‌کننده: {target_label}",
+        details=order_details,
         amount_irt=final_irt,
     )
 
     result = await request_payment(
-        amount_irt=final_irt,
+        amount_irt=shortage,
         description=f"{product} برای {target_label}",
     )
 
     if not result.success or not result.authority:
+        await update_order_status(order_id, "cancelled")
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(
                 f"{get_pe('cross')} درخواست پرداخت ناموفق بود:\n{result.message}\n\nلطفاً بعداً دوباره تلاش کنید.",
@@ -149,23 +201,38 @@ async def _initiate_payment(callback: CallbackQuery, state: FSMContext) -> None:
         await state.clear()
         return
 
-    payment_id = await create_payment(order_id, final_irt)
+    wallet_used = min(wallet_balance, final_irt)
+    if wallet_used > 0 and not await deduct_from_wallet(callback.from_user.id, wallet_used):
+        await update_order_status(order_id, "cancelled")
+        with contextlib.suppress(TelegramBadRequest):
+            await callback.message.edit_text(
+                f"{get_pe('cross')} موجودی کیف پول شما تغییر کرده است.\nلطفاً دوباره تلاش کنید.",
+                reply_markup=back_to_menu_kb(),
+            )
+        await state.clear()
+        return
+
+    payment_id = await create_payment(order_id, shortage)
     await update_payment_authority(payment_id, result.authority)
     await state.update_data(
         order_id=order_id,
         payment_id=payment_id,
         authority=result.authority,
-        amount_irt=final_irt,
+        amount_irt=shortage,
+        wallet_used=wallet_used,
     )
     await state.set_state(TelegramPremiumStates.payment)
 
     rate_str = f"{rate:,.0f}".replace(",", "،")
+    shortage_str = f"{shortage:,}".replace(",", "،")
     with contextlib.suppress(TelegramBadRequest):
         await callback.message.edit_text(
             f"{get_pe('card')} <b>پرداخت: {product}</b>\n\n"
             f"{get_pe('user')} دریافت‌کننده: {target_label}\n"
             f"{get_pe('exchange')} نرخ ارز: ۱ دلار = {rate_str} تومان\n"
-            f"{get_pe('money')} مبلغ کل: <b>{final_irt:,} تومان</b>\n\n"
+            f"{get_pe('money')} مبلغ کل: <b>{final_irt:,} تومان</b>\n"
+            f"{get_pe('purse')} موجودی کیف پول شما: {wallet_balance:,} تومان\n"
+            f"{get_pe('card')} مبلغ پرداختی از درگاه: <b>{shortage_str} تومان</b>\n\n"
             "برای ادامه پرداخت روی دکمه زیر کلیک کنید:",
             reply_markup=pay_link_kb(result.start_pay_url),
         )
@@ -178,20 +245,59 @@ async def _initiate_payment_msg(message: Message, state: FSMContext) -> None:
     target_label = data["target_label"]
 
     final_irt, rate = await price_display_raw(usd)
+    wallet_balance = await get_wallet_balance(message.from_user.id)
+    shortage = final_irt - wallet_balance
+    order_details = f"دریافت‌کننده: {target_label}"
+
+    if shortage <= 0:
+        # Wallet covers the full price — bypass Zarinpal and deliver now.
+        if not await deduct_from_wallet(message.from_user.id, final_irt):
+            await message.answer(
+                f"{get_pe('cross')} موجودی کیف پول شما کافی نیست.\n"
+                "لطفاً کیف پول خود را شارژ کنید یا دوباره تلاش کنید.",
+                reply_markup=back_to_menu_kb(),
+            )
+            await state.clear()
+            return
+
+        order_id = await create_order(
+            user_id=message.from_user.id,
+            product=product,
+            details=order_details,
+            amount_irt=final_irt,
+        )
+        await update_order_status(order_id, "paid")
+
+        await message.answer(
+            f"{get_pe('purse')} <b>پرداخت از کیف پول انجام شد!</b>\n\n"
+            f"{get_pe('user')} دریافت‌کننده: {target_label}\n"
+            f"{get_pe('money')} مبلغ کسر شده: <b>{final_irt:,} تومان</b>\n\n"
+            "در حال تحویل محصول…",
+        )
+        await deliver_product(
+            bot=message.bot,
+            user_id=message.from_user.id,
+            order_id=order_id,
+            product=product,
+            details=order_details,
+        )
+        await state.clear()
+        return
 
     order_id = await create_order(
         user_id=message.from_user.id,
         product=product,
-        details=f"دریافت‌کننده: {target_label}",
+        details=order_details,
         amount_irt=final_irt,
     )
 
     result = await request_payment(
-        amount_irt=final_irt,
+        amount_irt=shortage,
         description=f"{product} برای {target_label}",
     )
 
     if not result.success or not result.authority:
+        await update_order_status(order_id, "cancelled")
         await message.answer(
             f"{get_pe('cross')} درخواست پرداخت ناموفق بود:\n{result.message}\n\nلطفاً بعداً دوباره تلاش کنید.",
             reply_markup=back_to_menu_kb(),
@@ -199,22 +305,36 @@ async def _initiate_payment_msg(message: Message, state: FSMContext) -> None:
         await state.clear()
         return
 
-    payment_id = await create_payment(order_id, final_irt)
+    wallet_used = min(wallet_balance, final_irt)
+    if wallet_used > 0 and not await deduct_from_wallet(message.from_user.id, wallet_used):
+        await update_order_status(order_id, "cancelled")
+        await message.answer(
+            f"{get_pe('cross')} موجودی کیف پول شما تغییر کرده است.\nلطفاً دوباره تلاش کنید.",
+            reply_markup=back_to_menu_kb(),
+        )
+        await state.clear()
+        return
+
+    payment_id = await create_payment(order_id, shortage)
     await update_payment_authority(payment_id, result.authority)
     await state.update_data(
         order_id=order_id,
         payment_id=payment_id,
         authority=result.authority,
-        amount_irt=final_irt,
+        amount_irt=shortage,
+        wallet_used=wallet_used,
     )
     await state.set_state(TelegramPremiumStates.payment)
 
     rate_str = f"{rate:,.0f}".replace(",", "،")
+    shortage_str = f"{shortage:,}".replace(",", "،")
     await message.answer(
         f"{get_pe('card')} <b>پرداخت: {product}</b>\n\n"
         f"{get_pe('user')} دریافت‌کننده: {target_label}\n"
         f"{get_pe('exchange')} نرخ ارز: ۱ دلار = {rate_str} تومان\n"
-        f"{get_pe('money')} مبلغ کل: <b>{final_irt:,} تومان</b>\n\n"
+        f"{get_pe('money')} مبلغ کل: <b>{final_irt:,} تومان</b>\n"
+        f"{get_pe('purse')} موجودی کیف پول شما: {wallet_balance:,} تومان\n"
+        f"{get_pe('card')} مبلغ پرداختی از درگاه: <b>{shortage_str} تومان</b>\n\n"
         "برای ادامه پرداخت روی دکمه زیر کلیک کنید:",
         reply_markup=pay_link_kb(result.start_pay_url),
     )
