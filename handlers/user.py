@@ -11,7 +11,7 @@ from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardB
 from aiogram.filters import CommandStart, Command
 from aiogram.exceptions import TelegramBadRequest
 
-from database.db import get_or_create_user, get_user_orders, get_total_users, update_user_phone, user_has_phone
+from database.db import get_or_create_user, get_user_orders, get_total_users, update_user_phone, user_has_phone, get_wallet_balance
 from states.states import VirtualNumberStates
 from keyboards.inline import (
     main_menu_kb,
@@ -19,10 +19,10 @@ from keyboards.inline import (
     market_rates_refresh_kb,
     welcome_inline_kb,
 )
-from keyboards.reply import main_reply_kb, virtual_services_reply_kb, SHIZ_SERVICES_MAP
+from keyboards.reply import main_reply_kb, virtual_services_reply_kb
 from keyboards.admin_reply import admin_reply_kb
 from keyboards.callback_data import WelcomeCallback
-from filters import IsAdmin
+from filters import IsAdmin, IsDynamicService
 from utils.emojis import get_pe
 from utils.shiznumber import get_panel_balance
 
@@ -208,12 +208,14 @@ async def reply_btn_profile(message: Message) -> None:
 
     username_display = f"@{user['username']}" if user["username"] else "—"
     admin_badg = f" | {get_pe('shield')} مدیر" if user["is_admin"] else ""
+    wallet_balance = await get_wallet_balance(message.from_user.id)
 
     text = (
         f"{get_pe('user')} <b>پروفایل من</b>\n\n"
         f"{get_pe('id_icon')} شناسه: <code>{user['user_id']}</code>\n"
         f"{get_pe('name_badge')} نام: {user['full_name']}\n"
         f"{get_pe('user')} یوزرنیم: {username_display}{admin_badg}\n"
+        f"{get_pe('purse')} موجودی کیف پول: <b>{wallet_balance:,}</b> تومان\n"
         f"{get_pe('calendar')} تاریخ عضویت: {user['joined_at'][:10] if user['joined_at'] else '—'}"
     )
     await message.answer(text, reply_markup=main_reply_kb())
@@ -354,24 +356,24 @@ async def cb_menu_virtual_number(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-@router.message(F.text.in_(SHIZ_SERVICES_MAP.keys()))
-async def process_shiz_service_selection(message: Message, state: FSMContext) -> None:
-    """Handle a service tapped from the ReplyKeyboard.
+@router.message(IsDynamicService())
+async def process_shiz_service_selection(
+    message: Message,
+    state: FSMContext,
+    shiz_slug: str,
+) -> None:
+    """Handle a service tapped from the dynamic ReplyKeyboard.
 
-    First tries the dynamic services map from the API; falls back to the
-    hardcoded ``SHIZ_SERVICES_MAP`` if the API map doesn't contain the text.
+    The ``IsDynamicService`` filter resolves the tapped text against the
+    live API services map (with the hardcoded ``SHIZ_SERVICES_MAP`` as a
+    fallback) and passes the matching slug as ``shiz_slug``.
     """
-    from utils.shiznumber import get_services_map, get_service_numbers
+    from utils.shiznumber import get_service_numbers
+    from utils.shiznumber import get_services_map
     from keyboards.inline import virtual_country_kb
 
+    slug = shiz_slug
     services_map = await get_services_map()
-    slug = services_map.get(message.text) or SHIZ_SERVICES_MAP.get(message.text)
-    if not slug:
-        await message.answer(
-            "⚠️ سرویس نامعتبر. لطفاً از کیبورد پایین یکی را انتخاب کنید.",
-            reply_markup=virtual_services_reply_kb(services_map),
-        )
-        return
 
     await message.answer(f"⏳ در حال دریافت لیست کشورهای {message.text}...")
 
@@ -560,6 +562,10 @@ async def cb_virtual_buy(callback: CallbackQuery, state: FSMContext) -> None:
         price_str = f"{final_price:,}".replace(",", "،")
         country_name = selected.get("country_fa", "نامشخص")
 
+        wallet_balance = await get_wallet_balance(callback.from_user.id)
+        shortage = max(0, int(final_price) - wallet_balance)
+        shortage_str = f"{shortage:,}".replace(",", "،")
+
         await state.update_data(
             virtual_slug=slug,
             country_name=country_name,
@@ -571,8 +577,14 @@ async def cb_virtual_buy(callback: CallbackQuery, state: FSMContext) -> None:
 
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
         from utils.emojis import get_premium_id
+
+        if shortage <= 0:
+            confirm_label = "خرید از کیف پول"
+        else:
+            confirm_label = f"خرید — {shortage_str} تومان"
+
         confirm_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=f"خرید — {price_str} تومان",
+            [InlineKeyboardButton(text=confirm_label,
                                   callback_data="virtual:confirm",
                                   style="success",
                                   icon_custom_emoji_id=get_premium_id("check"))],
@@ -582,11 +594,18 @@ async def cb_virtual_buy(callback: CallbackQuery, state: FSMContext) -> None:
                                   icon_custom_emoji_id=get_premium_id("cross"))],
         ])
 
+        wallet_line = f"{get_pe('purse')} موجودی کیف پول شما: <b>{wallet_balance:,}</b> تومان\n"
+        if shortage > 0:
+            pay_line = f"{get_pe('card')} مبلغ پرداختی از درگاه: <b>{shortage_str} تومان</b>\n"
+        else:
+            pay_line = f"{get_pe('check')} کل مبلغ از <b>کیف پول</b> کسر می‌شود.\n"
+
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(
                 f"{get_pe('key_lock')} <b>خرید شماره مجازی</b>\n\n"
                 f"{get_pe('web')} کشور: <b>{country_name}</b>\n"
-                f"{get_pe('money')} قیمت نهایی: <b>{price_str} تومان</b>\n\n"
+                f"{get_pe('money')} قیمت نهایی: <b>{price_str} تومان</b>\n"
+                f"{wallet_line}{pay_line}\n"
                 "پس از خرید، یک شماره مجازی دریافت خواهید کرد.\n"
                 "کد تأیید ظرف چند دقیقه برای شما ارسال می‌شود.\n\n"
                 "آیا مطمئن هستید؟",
@@ -605,7 +624,17 @@ async def cb_virtual_buy(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "virtual:confirm", VirtualNumberStates.confirm_buy)
 async def cb_virtual_confirm_buy(callback: CallbackQuery, state: FSMContext) -> None:
-    """User confirmed — initiate Zarinpal payment for the virtual number."""
+    """User confirmed — pay the DIFFERENCE from the wallet + gateway.
+
+    Wallet math:
+        shortage = final_price - user_wallet_balance
+      • shortage > 0  → Zarinpal invoice is STRICTLY for ``shortage``,
+                        the wallet covers the rest.
+      • shortage <= 0 → Zarinpal is bypassed entirely; the wallet pays
+                        the full price and delivery runs immediately.
+    """
+    wallet_used = 0
+    order_id = None
     try:
         await callback.answer()
         data = await state.get_data()
@@ -623,8 +652,17 @@ async def cb_virtual_confirm_buy(callback: CallbackQuery, state: FSMContext) -> 
             await state.clear()
             return
 
-        from database.db import create_order, create_payment, update_payment_authority
+        from database.db import (
+            create_order,
+            create_payment,
+            update_payment_authority,
+            update_order_status,
+            get_wallet_balance,
+            deduct_from_wallet,
+            add_to_wallet,
+        )
         from utils.zarinpal import request_payment
+        from utils.delivery import deliver_product
         from keyboards.inline import pay_link_kb
 
         final_irt = int(price_toman)
@@ -656,19 +694,64 @@ async def cb_virtual_confirm_buy(callback: CallbackQuery, state: FSMContext) -> 
                     )
             return
 
+        user_wallet_balance = await get_wallet_balance(callback.from_user.id)
+        shortage = final_irt - user_wallet_balance
+        order_details = f"سرویس: {slug} | آیتم: {item_id}"
+
+        if shortage <= 0:
+            # ── Wallet covers everything — bypass Zarinpal entirely ──
+            if not await deduct_from_wallet(callback.from_user.id, final_irt):
+                with contextlib.suppress(TelegramBadRequest):
+                    await callback.message.edit_text(
+                        f"{get_pe('cross')} موجودی کیف پول شما کافی نیست.\n"
+                        "لطفاً کیف پول خود را شارژ کنید یا دوباره تلاش کنید.",
+                        reply_markup=back_to_menu_kb(),
+                    )
+                await state.clear()
+                return
+
+            order_id = await create_order(
+                user_id=callback.from_user.id,
+                product=f"شماره مجازی: {country_name}",
+                details=order_details,
+                amount_irt=final_irt,
+            )
+            await update_order_status(order_id, "paid")
+
+            # Confirm the wallet charge to the user, then deliver instantly.
+            with contextlib.suppress(TelegramBadRequest):
+                await callback.message.edit_text(
+                    f"{get_pe('purse')} <b>پرداخت از کیف پول انجام شد!</b>\n\n"
+                    f"{get_pe('web')} کشور: <b>{country_name}</b>\n"
+                    f"{get_pe('money')} مبلغ کسر شده: <b>{final_irt:,}</b> تومان\n\n"
+                    "در حال تحویل شماره مجازی…",
+                    reply_markup=None,
+                )
+            await deliver_product(
+                bot=callback.bot,
+                user_id=callback.from_user.id,
+                order_id=order_id,
+                product=f"شماره مجازی: {country_name}",
+                details=order_details,
+            )
+            await state.clear()
+            return
+
+        # ── Partial wallet: the gateway charge is ONLY the shortage ──
         order_id = await create_order(
             user_id=callback.from_user.id,
             product=f"شماره مجازی: {country_name}",
-            details=f"سرویس: {slug} | آیتم: {item_id}",
+            details=order_details,
             amount_irt=final_irt,
         )
 
         result = await request_payment(
-            amount_irt=final_irt,
+            amount_irt=shortage,
             description=f"خرید شماره مجازی {country_name}",
         )
 
         if not result.success or not result.authority:
+            await update_order_status(order_id, "cancelled")
             with contextlib.suppress(TelegramBadRequest):
                 await callback.message.edit_text(
                     f"{get_pe('cross')} درخواست پرداخت ناموفق بود:\n"
@@ -678,19 +761,35 @@ async def cb_virtual_confirm_buy(callback: CallbackQuery, state: FSMContext) -> 
             await state.clear()
             return
 
-        payment_id = await create_payment(order_id, final_irt)
+        wallet_used = min(user_wallet_balance, final_irt)  # == wallet here (shortage>0)
+        if wallet_used > 0 and not await deduct_from_wallet(callback.from_user.id, wallet_used):
+            await update_order_status(order_id, "cancelled")
+            with contextlib.suppress(TelegramBadRequest):
+                await callback.message.edit_text(
+                    f"{get_pe('cross')} موجودی کیف پول شما تغییر کرده است.\n"
+                    "لطفاً دوباره تلاش کنید.",
+                    reply_markup=back_to_menu_kb(),
+                )
+            await state.clear()
+            return
+
+        payment_id = await create_payment(order_id, shortage)
         await update_payment_authority(payment_id, result.authority)
         await state.update_data(
             order_id=order_id, payment_id=payment_id,
-            authority=result.authority, amount_irt=final_irt,
+            authority=result.authority, amount_irt=shortage,
+            wallet_used=wallet_used,
         )
         await state.set_state(VirtualNumberStates.waiting_code)
 
+        shortage_str = f"{shortage:,}".replace(",", "،")
         price_str = f"{final_irt:,}".replace(",", "،")
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(
                 f"{get_pe('card')} <b>پرداخت: شماره مجازی {country_name}</b>\n\n"
-                f"{get_pe('money')} مبلغ: <b>{price_str} تومان</b>\n\n"
+                f"{get_pe('money')} مبلغ نهایی: <b>{price_str} تومان</b>\n"
+                f"{get_pe('purse')} موجودی کیف پول شما: {user_wallet_balance:,} تومان\n"
+                f"{get_pe('card')} مبلغ پرداختی از درگاه: <b>{shortage_str} تومان</b>\n\n"
                 "برای پرداخت روی دکمه زیر کلیک کنید:\n"
                 "<i>پس از پرداخت موفق، شماره مجازی و کد تأیید برای شما ارسال خواهد شد.</i>",
                 reply_markup=pay_link_kb(result.start_pay_url),
@@ -698,6 +797,13 @@ async def cb_virtual_confirm_buy(callback: CallbackQuery, state: FSMContext) -> 
         await callback.answer()
     except Exception as e:
         logger.error(f"CRASH IN VIRTUAL CONFIRM: {e}", exc_info=True)
+        # Refund the wallet portion so a failed setup never eats credit.
+        if wallet_used > 0:
+            with contextlib.suppress(Exception):
+                await add_to_wallet(callback.from_user.id, wallet_used)
+        if order_id:
+            with contextlib.suppress(Exception):
+                await update_order_status(order_id, "cancelled")
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(
                 "⚠️ خطایی در فرآیند پرداخت رخ داد. لطفاً دوباره تلاش کنید.",

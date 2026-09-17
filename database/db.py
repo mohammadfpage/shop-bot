@@ -56,12 +56,13 @@ async def init_db() -> None:
     async with pool.acquire() as conn:
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
-                user_id     BIGINT PRIMARY KEY,
-                username    TEXT,
-                full_name   TEXT,
-                phone_number TEXT,
-                is_admin    BOOLEAN DEFAULT FALSE,
-                joined_at   TEXT
+                user_id        BIGINT PRIMARY KEY,
+                username       TEXT,
+                full_name      TEXT,
+                phone_number   TEXT,
+                wallet_balance BIGINT DEFAULT 0,
+                is_admin       BOOLEAN DEFAULT FALSE,
+                joined_at      TEXT
             );
 
             CREATE TABLE IF NOT EXISTS orders (
@@ -130,6 +131,14 @@ async def init_db() -> None:
         try:
             await conn.execute(
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_number TEXT"
+            )
+        except Exception:
+            pass  # column already exists or DB doesn't support IF NOT EXISTS
+
+        # Migrate: add wallet_balance column if missing (idempotent)
+        try:
+            await conn.execute(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet_balance BIGINT DEFAULT 0"
             )
         except Exception:
             pass  # column already exists or DB doesn't support IF NOT EXISTS
@@ -279,6 +288,50 @@ async def user_has_phone(user_id: int) -> bool:
         "SELECT phone_number FROM users WHERE user_id = $1", user_id,
     )
     return bool(row and row["phone_number"])
+
+
+# ─── Wallet helpers ──────────────────────────────────────────────────
+
+async def get_wallet_balance(user_id: int) -> int:
+    """Return the user's in-bot wallet balance in Tomans (0 if unknown)."""
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT wallet_balance FROM users WHERE user_id = $1", user_id,
+    )
+    if row is None or row["wallet_balance"] is None:
+        return 0
+    return int(row["wallet_balance"])
+
+
+async def add_to_wallet(user_id: int, amount: int) -> None:
+    """Credit the user's wallet balance. Negative amounts are ignored."""
+    amount = int(amount)
+    if amount <= 0:
+        return
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE users SET wallet_balance = COALESCE(wallet_balance, 0) + $2 "
+        "WHERE user_id = $1 AND $2 > 0",
+        user_id, amount,
+    )
+
+
+async def deduct_from_wallet(user_id: int, amount: int) -> bool:
+    """Atomically deduct *amount* from the user's wallet if sufficient.
+
+    Returns ``True`` when the deduction succeeded, ``False`` when the
+    balance is too low (or the user row is missing). Never goes negative.
+    """
+    amount = int(amount)
+    if amount <= 0:
+        return True
+    pool = await get_pool()
+    result = await pool.execute(
+        "UPDATE users SET wallet_balance = wallet_balance - $2 "
+        "WHERE user_id = $1 AND wallet_balance >= $2",
+        user_id, amount,
+    )
+    return result == "UPDATE 1"
 
 
 async def get_all_users() -> list[asyncpg.Record]:

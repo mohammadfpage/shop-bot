@@ -117,7 +117,7 @@ async def get_services_map() -> dict[str, str]:
     # Fallback to hardcoded map if API fails (and cache is empty)
     if not _services_cache:
         _services_cache = {
-            "تلگрам 💎": "telegram",
+            "تلگرام 💎": "telegram",
             "مایکروسافت 💻": "microsoft",
             "تیندر 🔥": "tinder",
             "واتساپ ✳️": "whatsapp",
@@ -128,6 +128,19 @@ async def get_services_map() -> dict[str, str]:
         }
         _services_cache_ts = now
     return _services_cache
+
+
+async def warm_services_cache() -> None:
+    """Prefetch the services map in the background (runs as a task).
+
+    Never blocks the main thread / startup and never raises: any fetch
+    failure is swallowed by ``get_services_map`` and simply leaves the
+    (empty) cache to be populated lazily on the first user tap.
+    """
+    try:
+        await get_services_map()
+    except Exception as exc:
+        logger.error("Services prewarm failed: %s", exc)
 
 async def get_service_numbers(slug: str) -> list[dict]:
     """GET /services/{slug}/numbers — fetch available countries for a service.

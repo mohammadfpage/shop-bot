@@ -214,7 +214,18 @@ async def lifespan(app: FastAPI):
         rate_fetcher_task.get_name(),
     )
 
-    # ── 4. Dispatcher + routers ──────────────────────────────────────
+    # ── 4. Non-blocking virtual-services prewarm ─────────────────────
+    # Fetch the dynamic services map in the background so the first tap
+    # on the virtual-number menu is instant. Runs as a task that never
+    # blocks startup and can never crash the application lifecycle.
+    from utils.shiznumber import warm_services_cache
+    services_warm_task = asyncio.create_task(warm_services_cache())
+    logger.info(
+        "Virtual-services prewarm task started: %s",
+        services_warm_task.get_name(),
+    )
+
+    # ── 5. Dispatcher + routers ──────────────────────────────────────
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
 
@@ -225,7 +236,7 @@ async def lifespan(app: FastAPI):
     dp.errors.register(global_error_handler)
     register_routers(dp)
 
-    # ── 5. Database ──────────────────────────────────────────────────
+    # ── 6. Database ──────────────────────────────────────────────────
     logger.info("Initializing database (PostgreSQL) …")
     await init_db()
     logger.info("Database ready.")
@@ -242,9 +253,15 @@ async def lifespan(app: FastAPI):
     # Cancel background tasks
     rate_cache.stop()
     rate_fetcher_task.cancel()
+    services_warm_task.cancel()
 
     try:
         await rate_fetcher_task
+    except asyncio.CancelledError:
+        pass
+
+    try:
+        await services_warm_task
     except asyncio.CancelledError:
         pass
 
@@ -320,13 +337,14 @@ async def zarinpal_verify(
         )
 
     order_id = full_payment["order_id"]
-    amount_irt = full_payment["order_amount_irt"]
+    gateway_amount_irt = int(full_payment["payment_amount_irt"])
 
     if (
         full_payment["authority"] != Authority
         or full_payment["payment_status"] != "init"
         or full_payment["order_status"] != "pending"
-        or full_payment["payment_amount_irt"] != full_payment["order_amount_irt"]
+        or gateway_amount_irt < 1
+        or gateway_amount_irt > int(full_payment["order_amount_irt"])
     ):
         await fail_payment(full_payment["payment_id"])
         return HTMLResponse(
@@ -335,10 +353,11 @@ async def zarinpal_verify(
         )
 
     # ── Verify with Zarinpal API ──────────────────────────────────
-    # The amount sent to Zarinpal was ``amount_irt`` (an int fetched
-    # from the DB).  We must verify with that exact frozen value and
-    # never recalculate from a live exchange rate.
-    expected_amount = int(amount_irt)
+    # The amount sent to Zarinpal was the gateway amount frozen in the
+    # payment record (an int). When the wallet covered part of the order,
+    # this amount is SMALLER than the order total and must never be
+    # recalculated from a live exchange rate or the order row.
+    expected_amount = gateway_amount_irt
     logger.info(
         "Verifying authority=%s with frozen amount=%s (order #%s)",
         Authority, expected_amount, order_id,

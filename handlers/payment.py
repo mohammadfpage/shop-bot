@@ -8,6 +8,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
 
 from database.db import (
+    add_to_wallet,
     complete_payment,
     delete_payment,
     fail_payment,
@@ -41,6 +42,12 @@ async def cb_pay_check(callback: CallbackQuery, state: FSMContext) -> None:
             await callback.answer("⚠️ اطلاعات پرداخت یافت نشد.", show_alert=True)
             return
 
+        # The gateway charge lives in the payment record (NOT the order —
+        # a payment may be smaller than the order when the wallet covered
+        # part of the price). Verify against the frozen payment amount and
+        # never allow a gateway charge that exceeds the order total.
+        gateway_amount_irt = int(payment["payment_amount_irt"])
+
         # Never trust mutable FSM values for the amount, authority, or order.
         if (
             payment["order_id"] != state_order_id
@@ -48,7 +55,8 @@ async def cb_pay_check(callback: CallbackQuery, state: FSMContext) -> None:
             or payment["user_id"] != callback.from_user.id
             or payment["payment_status"] != "init"
             or payment["order_status"] != "pending"
-            or payment["payment_amount_irt"] != payment["order_amount_irt"]
+            or gateway_amount_irt < 1
+            or gateway_amount_irt > int(payment["order_amount_irt"])
         ):
             await fail_payment(payment_id)
             await callback.answer("❌ اطلاعات پرداخت معتبر نیست.", show_alert=True)
@@ -56,7 +64,7 @@ async def cb_pay_check(callback: CallbackQuery, state: FSMContext) -> None:
 
         await callback.answer("⏳ در حال بررسی پرداخت…", show_alert=False)
         # Fetch the persisted integer amount from the DB — never recalculate.
-        expected_amount = int(payment["order_amount_irt"])
+        expected_amount = gateway_amount_irt
         result = await verify_payment(
             authority=payment["authority"],
             amount_irt=expected_amount,
@@ -111,17 +119,22 @@ async def cb_pay_check(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "pay:cancel")
 async def cb_pay_cancel(callback: CallbackQuery, state: FSMContext) -> None:
-    """Cancel the current payment and remove its persisted payment record."""
+    """Cancel the current payment, remove its record, and refund any wallet credit."""
     await callback.answer()
     try:
         data = await state.get_data()
         payment_id = data.get("payment_id")
         order_id = data.get("order_id")
+        wallet_used = int(data.get("wallet_used") or 0)
 
         if order_id:
             await update_order_status(order_id, "cancelled")
         if payment_id:
             await delete_payment(payment_id)
+
+        # If the checkout had deducted a wallet portion, give it back.
+        if wallet_used > 0:
+            await add_to_wallet(callback.from_user.id, wallet_used)
 
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(

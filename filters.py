@@ -80,3 +80,35 @@ class IsAdmin(BaseFilter):
             return False
 
         return user_id in config.ADMIN_IDS
+
+
+class IsDynamicService(BaseFilter):
+    """Pass only for reply-keyboard taps that match a virtual-number service.
+
+    Resolves ``message.text`` against the live Shiznumber services map
+    (``get_services_map()``) with the hardcoded ``SHIZ_SERVICES_MAP`` as a
+    fallback. On a match the handler receives the resolved slug as an extra
+    keyword argument ``shiz_slug``.
+
+    The services map is cached for one hour, so this filter stays cheap
+    after the first call. It never raises — a failed fetch simply means
+    the message is not treated as a service tap.
+    """
+
+    async def __call__(
+        self,
+        message: Message,
+        **kwargs: Any,
+    ) -> Union[bool, dict[str, str]]:
+        if not message or not message.text:
+            return False
+        try:
+            from utils.shiznumber import get_services_map
+            from keyboards.reply import SHIZ_SERVICES_MAP
+            services_map = await get_services_map()
+            slug = services_map.get(message.text) or SHIZ_SERVICES_MAP.get(message.text)
+        except Exception:
+            return False
+        if not slug:
+            return False
+        return {"shiz_slug": slug}
