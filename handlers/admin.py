@@ -252,7 +252,6 @@ async def cb_admin_guide(callback: CallbackQuery) -> None:
             guide_text,
             reply_markup=admin_back_kb(),
         )
-    await callback.answer()
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -287,7 +286,6 @@ async def cb_admin_panel(callback: CallbackQuery, state: FSMContext) -> None:
             "یک عملیات را انتخاب کنید:",
             reply_markup=admin_panel_kb(user_count),
         )
-    await callback.answer()
 
 
 @router.callback_query(F.data == "admin:users_stat", IsAdmin())
@@ -309,7 +307,6 @@ async def cb_admin_users_stat(callback: CallbackQuery) -> None:
             f"{get_pe('cross')} سفارشات لغو شده: <b>{cancelled_count}</b>",
             reply_markup=admin_back_kb(),
         )
-    await callback.answer()
 
 
 @router.callback_query(F.data == "admin:pending", IsAdmin())
@@ -332,7 +329,6 @@ async def cb_admin_pending(callback: CallbackQuery) -> None:
         text = "\n".join(lines)
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(text, reply_markup=admin_back_kb())
-    await callback.answer()
 
 
 @router.callback_query(F.data == "admin:paid_orders", IsAdmin())
@@ -373,7 +369,6 @@ async def cb_admin_paid_orders(callback: CallbackQuery) -> None:
 
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text("\n".join(lines), reply_markup=kb)
-    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("admin:view_paid:"), IsAdmin())
@@ -397,7 +392,6 @@ async def cb_admin_view_paid(callback: CallbackQuery) -> None:
             "عملیات مورد نظر را انتخاب کنید:",
             reply_markup=admin_paid_order_kb(order_id),
         )
-    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("admin:complete:"), IsAdmin())
@@ -428,7 +422,6 @@ async def cb_admin_complete(callback: CallbackQuery) -> None:
             f"{get_pe('user')} به کاربر <code>{order['user_id']}</code> اطلاع‌رسانی شد.",
             reply_markup=admin_back_kb(),
         )
-    await callback.answer()
 
 
 @router.callback_query(F.data == "admin:completed", IsAdmin())
@@ -447,7 +440,6 @@ async def cb_admin_completed(callback: CallbackQuery) -> None:
             lines.append(f"#{o['order_id']} | {o['product']} | {_safe_amount(o['amount_irt'])} تومان")
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text("\n".join(lines), reply_markup=admin_back_kb())
-    await callback.answer()
 
 
 @router.callback_query(F.data == "admin:all_orders", IsAdmin())
@@ -467,7 +459,6 @@ async def cb_admin_all(callback: CallbackQuery) -> None:
             )
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text("\n".join(lines), reply_markup=admin_back_kb())
-    await callback.answer()
 
 
 @router.callback_query(F.data == "admin:finance", IsAdmin())
@@ -488,7 +479,6 @@ async def cb_admin_finance(callback: CallbackQuery) -> None:
             "<i>شامل سفارشات پرداخت شده و انجام شده.</i>",
             reply_markup=admin_finance_kb(),
         )
-    await callback.answer()
 
 
 @router.callback_query(F.data == "admin:account_margin", IsAdmin())
@@ -507,7 +497,6 @@ async def cb_admin_account_margin(callback: CallbackQuery, state: FSMContext) ->
             "قیمت نهایی = قیمت پایه × (۱ + حاشیه سود٪)",
             reply_markup=admin_back_kb(),
         )
-    await callback.answer()
 
 
 @router.message(AccountMarginState.waiting_for_margin)
@@ -557,7 +546,6 @@ async def cb_admin_broadcast(callback: CallbackQuery, state: FSMContext) -> None
             "<i>برای انصراف روی «پنل مدیریت» کلیک کنید.</i>",
             reply_markup=admin_back_kb(),
         )
-    await callback.answer()
 
 
 @router.message(AdminStates.broadcast_message)
@@ -634,7 +622,6 @@ async def cb_broadcast_send(callback: CallbackQuery, state: FSMContext) -> None:
             f"{get_pe('cross')} ناموفق: {failed}",
             reply_markup=admin_back_kb(),
         )
-    await callback.answer()
 
 
 @router.callback_query(F.data == "admin:tickets", IsAdmin())
@@ -660,7 +647,6 @@ async def cb_admin_tickets(callback: CallbackQuery) -> None:
         lines.append("\nبرای پاسخ، دستور پاسخ زیر هر تیکت را ارسال کنید.")
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text("\n".join(lines), reply_markup=admin_back_kb())
-    await callback.answer()
 
 
 @router.callback_query(F.data == "admin:prices", IsAdmin())
@@ -680,7 +666,6 @@ async def cb_admin_prices(callback: CallbackQuery, state: FSMContext) -> None:
                 f"{get_pe('money')} <b>هیچ محصولی یافت نشد.</b>",
                 reply_markup=admin_back_kb(),
             )
-        await callback.answer()
         return
 
     # Build the list of dicts for the keyboard builder
@@ -703,7 +688,6 @@ async def cb_admin_prices(callback: CallbackQuery, state: FSMContext) -> None:
             text,
             reply_markup=product_list_kb(products),
         )
-    await callback.answer()
 
 
 # ─── ProductCallback: SELECT (show detail view) ─────────────────────
@@ -748,7 +732,6 @@ async def cb_product_select(
             text,
             reply_markup=product_detail_kb(key, label, price),
         )
-    await callback.answer()
 
 
 # ─── ProductCallback: EDIT (enter FSM state) ────────────────────────
@@ -781,7 +764,6 @@ async def cb_product_edit(
             "(مثال: <code>29.99</code>)",
             reply_markup=admin_back_kb(),
         )
-    await callback.answer()
 
 
 # ─── ProductState: receive new price text ────────────────────────────
@@ -883,7 +865,6 @@ async def cb_admin_deliver(callback: CallbackQuery) -> None:
             f"{get_pe('check')} سفارش #{order_id} به عنوان <b>تحویل شده</b> ثبت شد.",
             reply_markup=admin_back_kb(),
         )
-    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("admin:cancel:"), IsAdmin())
@@ -910,4 +891,3 @@ async def cb_admin_cancel(callback: CallbackQuery) -> None:
             f"{get_pe('cross')} سفارش #{order_id} <b>لغو شد</b>.",
             reply_markup=admin_back_kb(),
         )
-    await callback.answer()

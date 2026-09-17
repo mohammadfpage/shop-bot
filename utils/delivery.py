@@ -38,7 +38,9 @@ async def deliver_product(
     extra = extra or {}
 
     try:
-        if "شماره مجازی" in product or "virtual" in product.lower():
+        if "شارژ کیف پول" in product:
+            await _deliver_wallet_recharge(bot, user_id, order_id, product, details)
+        elif "شماره مجازی" in product or "virtual" in product.lower():
             await _deliver_virtual_number(bot, user_id, order_id, product, details)
         elif "ChatGPT" in product or "Gemini" in product:
             await _deliver_ai_account(bot, user_id, order_id, product)
@@ -82,6 +84,40 @@ async def _deliver_ai_account(bot: Bot, user_id: int, order_id: int, product: st
             f"{get_pe('warning')} در حال حاضر اطلاعات ورود موجود نیست. "
             f"مدیر ما {product} شما را به زودی تحویل خواهد داد.",
         )
+
+
+async def _deliver_wallet_recharge(
+    bot: Bot, user_id: int, order_id: int, product: str, details: str
+) -> None:
+    """Deliver wallet recharge — add the paid amount to the user's wallet."""
+    from database.db import add_to_wallet, get_order
+
+    order = await get_order(order_id)
+    if not order:
+        logger.error("Wallet recharge delivery failed: order #%s not found", order_id)
+        return
+
+    amount = order["amount_irt"]
+    if amount <= 0:
+        logger.error("Wallet recharge delivery failed: invalid amount for order #%s", order_id)
+        return
+
+    await add_to_wallet(user_id, amount)
+
+    from database.db import get_wallet_balance
+    new_balance = await get_wallet_balance(user_id)
+    amount_str = f"{amount:,}".replace(",", "،")
+    balance_str = f"{new_balance:,}".replace(",", "،")
+
+    await _safe_send(
+        bot,
+        user_id,
+        f"{get_pe('check')} <b>پرداخت موفق!</b>\n\n"
+        f"{get_pe('purse')} <b>کیف پول شما شارژ شد!</b>\n\n"
+        f"{get_pe('money')} مبلغ شارژ: <b>{amount_str} تومان</b>\n"
+        f"{get_pe('purse')} موجودی فعلی: <b>{balance_str} تومان</b>\n\n"
+        f"{get_pe('sparkles')} از خرید شما متشکریم!",
+    )
 
 
 async def _deliver_design(

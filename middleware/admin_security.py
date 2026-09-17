@@ -28,7 +28,7 @@ class AdminSecurityMiddleware(BaseMiddleware):
     async def __call__(
         self,
         handler: Callable[[Update, dict[str, Any]], Awaitable[Any]],
-        event: Update,
+        event: Message | CallbackQuery,
         data: dict[str, Any],
     ) -> Any:
         # Use the IsAdmin filter to check the sender

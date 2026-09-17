@@ -224,6 +224,79 @@ async def reply_btn_profile(message: Message) -> None:
     await message.answer(text, reply_markup=main_reply_kb())
 
 
+# ─── Reply keyboard: 💰 افزایش موجودی ──────────────────────────────
+
+@router.message(F.text.contains("افزایش موجودی"))
+async def reply_btn_increase_balance(message: Message, state: FSMContext) -> None:
+    """Show wallet recharge options."""
+    from states.states import WalletStates
+    await state.set_state(WalletStates.enter_amount)
+    await message.answer(
+        f"{get_pe('purse')} <b>افزایش موجودی کیف پول</b>\n\n"
+        "لطفاً مبلغ مورد نظر را به <b>تومان</b> وارد کنید:\n"
+        "(حداقل: ۱۰,۰۰۰ تومان)\n\n"
+        "مثال: <code>50000</code>",
+        reply_markup=back_to_menu_kb(),
+    )
+
+
+@router.message(WalletStates.enter_amount)
+async def msg_wallet_amount(message: Message, state: FSMContext) -> None:
+    """Receive wallet recharge amount and initiate payment."""
+    from states.states import WalletStates
+    from utils.pricing import price_display_raw
+    from utils.zarinpal import request_payment
+    from database.db import create_order, create_payment, update_payment_authority
+    from keyboards.inline import pay_link_kb
+
+    text = message.text.strip().replace(",", "").replace("،", "")
+    try:
+        amount = int(text)
+        if amount < 10000:
+            raise ValueError
+    except ValueError:
+        await message.answer(
+            f"{get_pe('warning')} لطفاً عددی بزرگتر از ۱۰,۰۰۰ ارسال کنید.",
+            reply_markup=back_to_menu_kb(),
+        )
+        return
+
+    # Create order for wallet recharge
+    order_id = await create_order(
+        user_id=message.from_user.id,
+        product="شارژ کیف پول",
+        details=f"مبلغ شارژ: {amount:,} تومان",
+        amount_irt=amount,
+    )
+
+    result = await request_payment(
+        amount_irt=amount,
+        description=f"شارژ کیف پول — {amount:,} تومان",
+    )
+
+    if not result.success or not result.authority:
+        await message.answer(
+            f"{get_pe('cross')} درخواست پرداخت ناموفق بود. لطفاً بعداً دوباره تلاش کنید.",
+            reply_markup=back_to_menu_kb(),
+        )
+        await state.clear()
+        return
+
+    payment_id = await create_payment(order_id, amount)
+    await update_payment_authority(payment_id, result.authority)
+    await state.update_data(order_id=order_id, payment_id=payment_id, authority=result.authority, amount_irt=amount)
+    await state.set_state(WalletStates.payment)
+
+    amount_str = f"{amount:,}".replace(",", "،")
+    await message.answer(
+        f"{get_pe('purse')} <b>شارژ کیف پول</b>\n\n"
+        f"{get_pe('money')} مبلغ: <b>{amount_str} تومان</b>\n\n"
+        "برای پرداخت روی دکمه زیر کلیک کنید:\n"
+        "<i>پس از پرداخت موفق، موجودی کیف پول شما افزایش می‌یابد.</i>",
+        reply_markup=pay_link_kb(result.start_pay_url),
+    )
+
+
 # ─── Reply keyboard: 🎧 پشتیبانی ───────────────────────────────────
 
 @router.message(F.text.contains("پشتیبانی"))
@@ -675,24 +748,35 @@ async def cb_virtual_confirm_buy(callback: CallbackQuery, state: FSMContext) -> 
         if panel_balance < base_price:
             with contextlib.suppress(Exception):
                 await callback.message.edit_text(
-                    f"{get_pe('warning')} <b>ارتباط با سرور موقتاً دچار اختلال شده است.</b>\n\n"
+                    f"{get_pe('warning')} <b>موجودی پنل کافی نیست.</b>\n\n"
                     "لطفاً دقایقی بعد دوباره تلاش کنید.",
                     reply_markup=back_to_menu_kb(),
                 )
             await state.clear()
 
-            # Silently alert admins with full details
+            # Calculate accounting details
+            countries = data.get("virtual_countries", [])
+            selected = next((c for c in countries if str(c.get("id")) == str(item_id)), {})
+            api_price = selected.get("base_price", base_price)  # Original API price
+            bot_price = selected.get("final_price", final_irt)  # Our price with margin
+            profit = bot_price - api_price  # Our profit
+            shortage_amount = base_price - panel_balance  # How much short we are
+
+            # Silently alert admins with full accounting details
             from config import config as _cfg
             for admin_id in _cfg.ADMIN_IDS:
                 with contextlib.suppress(Exception):
+                    username_display = f"@{callback.from_user.username}" if callback.from_user.username else "ندارد"
                     await callback.message.bot.send_message(
                         admin_id,
-                        f"🚨 <b>هشدار فوری:</b>\n"
-                        f"موجودی پنل برای خرید شماره مجازی کافی نیست!\n\n"
-                        f"💰 موجودی فعلی: <b>{panel_balance:,}</b> تومان\n"
-                        f"💵 مبلغ مورد نیاز: <b>{base_price:,}</b> تومان\n"
-                        f"🌍 سرویس: {slug} | آیتم: {item_id}\n"
-                        f"👤 کاربر: <code>{callback.from_user.id}</code>"
+                        f"🚨 <b>هشدار فوری: موجودی پنل تمام شده</b>\n\n"
+                        f"🌍 سرویس: <b>{slug}</b> | آیتم: <code>{item_id}</code>\n"
+                        f"👤 کاربر: <code>{callback.from_user.id}</code> ({username_display})\n\n"
+                        f"💰 قیمت اصلی API: <b>{api_price:,}</b> تومان\n"
+                        f"🏷 قیمت ربات (با سود): <b>{bot_price:,}</b> تومان\n"
+                        f"📈 سود ما: <b>{profit:,}</b> تومان\n"
+                        f"📦 موجودی فعلی پنل: <b>{panel_balance:,}</b> تومان\n"
+                        f"⚠️ کسری: <b>{shortage_amount:,}</b> تومان"
                     )
             return
 

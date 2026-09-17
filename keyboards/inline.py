@@ -455,24 +455,14 @@ def virtual_country_kb(
     """
     builder = InlineKeyboardBuilder()
 
-    # 1. Filter / Non-Report / Bulk controls
-    nr_label = "🚀 شماره غیرریپورت ✅" if non_report else "🚀 شماره غیرریپورت"
+    # 1. Header row (clean column headers)
     builder.row(
-        InlineKeyboardButton(
-            text=nr_label,
-            callback_data=f"v_nr:{slug}:{'on' if non_report else 'off'}",
-        ),
-    )
-    builder.row(
-        InlineKeyboardButton(text="🔍 فیلتر پیشرفته", callback_data=f"v_filter:{slug}"),
-        InlineKeyboardButton(text="🔄 خرید گروهی", callback_data=f"v_bulk:{slug}"),
-    )
-
-    # 2. Header row (clean column headers)
-    builder.row(
-        InlineKeyboardButton(text="💰 قیمت", callback_data="ignore"),
-        InlineKeyboardButton(text="📦 موجودی", callback_data="ignore"),
-        InlineKeyboardButton(text="🌍 نام کشور", callback_data="ignore"),
+        InlineKeyboardButton(text="💰 قیمت", callback_data="ignore",
+                            style="primary", icon_custom_emoji_id=get_premium_id("money")),
+        InlineKeyboardButton(text="📦 موجودی", callback_data="ignore",
+                            style="primary", icon_custom_emoji_id=get_premium_id("box")),
+        InlineKeyboardButton(text="🌍 نام کشور", callback_data="ignore",
+                            style="primary", icon_custom_emoji_id=get_premium_id("web")),
     )
 
     # 3. Data rows (10 per page)
@@ -487,22 +477,31 @@ def virtual_country_kb(
         if c["in_stock"]:
             status_text = f"✅ {c['count']} عدد"
             cb_data = f"v_buy:{c['id']}"
+            btn_style = "success"
+            btn_icon = get_premium_id("check")
         else:
             status_text = "🔴 ناموجود"
             cb_data = "ignore"
+            btn_style = "danger"
+            btn_icon = get_premium_id("cross")
 
         builder.row(
-            InlineKeyboardButton(text=f"{price:,}", callback_data=cb_data),
-            InlineKeyboardButton(text=status_text, callback_data=cb_data),
-            InlineKeyboardButton(text=country_name, callback_data=cb_data),
+            InlineKeyboardButton(text=f"💰 {price:,}", callback_data=cb_data,
+                                style=btn_style, icon_custom_emoji_id=btn_icon),
+            InlineKeyboardButton(text=status_text, callback_data=cb_data,
+                                style=btn_style, icon_custom_emoji_id=btn_icon),
+            InlineKeyboardButton(text=f"🌍 {country_name}", callback_data=cb_data,
+                                style=btn_style, icon_custom_emoji_id=btn_icon),
         )
 
     # 4. Pagination navigation
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton(text="⬅️ قبلی", callback_data=f"v_page:{slug}:{page - 1}"))
+        nav.append(InlineKeyboardButton(text="⬅️ قبلی", callback_data=f"v_page:{slug}:{page - 1}",
+                                        style="primary", icon_custom_emoji_id=get_premium_id("arrow_up")))
     if end < len(countries):
-        nav.append(InlineKeyboardButton(text="بعدی ➡️", callback_data=f"v_page:{slug}:{page + 1}"))
+        nav.append(InlineKeyboardButton(text="بعدی ➡️", callback_data=f"v_page:{slug}:{page + 1}",
+                                        style="primary", icon_custom_emoji_id=get_premium_id("arrow_down")))
     if nav:
         builder.row(*nav)
 

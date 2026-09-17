@@ -177,12 +177,17 @@ async def get_service_numbers(slug: str) -> list[dict]:
                             if not clean_name:
                                 clean_name = raw_name  # fallback if stripping removed everything
 
-                            # Add quality emojis
-                            quality_emojis = "⭐👍"
-                            if "ایران" in clean_name:
-                                quality_emojis += " 🛡️"
-
-                            display_name = f"{clean_name} {quality_emojis}"
+                            # Add quality emojis — only for Telegram numbers
+                            if slug == "telegram":
+                                quality_emojis = "👍"  # like = all Telegram numbers
+                                # ⭐ (star) = non-report indicator — shown as separate marker
+                                if item.get("non_report", False):
+                                    quality_emojis = "⭐👍"
+                                if "ایران" in clean_name:
+                                    quality_emojis += " 🛡️"
+                                display_name = f"{clean_name} {quality_emojis}"
+                            else:
+                                display_name = clean_name
 
                             result.append({
                                 "id": str(item.get("id")),

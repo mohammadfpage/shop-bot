@@ -95,6 +95,13 @@ class AccountMarginState(StatesGroup):
     waiting_for_margin = State()  # admin is typing the new margin percentage
 
 
+# ─── Wallet Recharge ─────────────────────────────────────────────
+class WalletStates(StatesGroup):
+    """Wallet recharge: enter amount → payment."""
+    enter_amount = State()
+    payment = State()
+
+
 # ─── Virtual Number Purchase (Shiznumber API) ────────────────────
 class VirtualNumberStates(StatesGroup):
     """Flow: choose country → confirm purchase → wait for code → receive code."""

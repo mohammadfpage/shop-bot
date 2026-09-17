@@ -36,10 +36,17 @@ def main_reply_kb() -> ReplyKeyboardMarkup:
             ],
             [
                 KeyboardButton(
+                    text="💰 افزایش موجودی",
+                    style="success",
+                    icon_custom_emoji_id=get_premium_id("purse"),
+                ),
+                KeyboardButton(
                     text="پشتیبانی",
                     style="primary",
                     icon_custom_emoji_id=get_premium_id("call"),
                 ),
+            ],
+            [
                 KeyboardButton(
                     text="سفارشات",
                     style="primary",
