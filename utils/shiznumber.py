@@ -10,7 +10,7 @@ Numbers are identified by a unique `id` returned from the numbers list.
 Endpoints:
     GET  /api/services/{slug}/numbers        → list available countries/numbers
     POST /api/numbers/{item_id}              → purchase a virtual number
-    GET  /api/code/{order_id}                → fetch the SMS verification code
+    GET  /api/orders/{order_id}              → fetch the SMS verification code
     GET  /api/user                           → fetch panel balance (nested)
 """
 
@@ -189,9 +189,15 @@ async def order_virtual_number(item_id: str) -> Optional[dict]:
                     data = await resp.json()
                     if isinstance(data, dict):
                         return data.get("order")
+                    logger.warning(
+                        "Shiznumber POST /numbers/%s returned non-dict JSON: %r",
+                        item_id, str(data)[:200],
+                    )
                     return None
+                body = await resp.text()
                 logger.warning(
-                    "Shiznumber POST /numbers/%s returned HTTP %s", item_id, resp.status
+                    "Shiznumber POST /numbers/%s returned HTTP %s: %s",
+                    item_id, resp.status, body[:200],
                 )
     except Exception as exc:
         logger.error("Shiznumber order failed (item_id=%s): %s", item_id, exc)
@@ -199,14 +205,14 @@ async def order_virtual_number(item_id: str) -> Optional[dict]:
 
 
 async def get_number_code(order_id: str) -> Optional[dict]:
-    """GET /code/{order_id} — fetch the SMS verification code for an ordered number.
+    """GET /orders/{order_id} — fetch the SMS verification code for an ordered number.
 
     Returns:
-        Raw JSON dict with 'code' if ready,
-        or {'status': 'waiting', ...} if still waiting.
+        Raw JSON dict with 'sms_code' when ready,
+        or {'status': {'name': 'waiting', ...}} if still waiting.
         None on connection errors.
     """
-    url = f"{BASE_URL}/code/{order_id}"
+    url = f"{BASE_URL}/orders/{order_id}"
     try:
         headers = _get_headers()
         timeout = aiohttp.ClientTimeout(total=15)

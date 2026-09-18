@@ -254,10 +254,14 @@ async def _poll_sms_code(
 
             if not result:
                 continue
-            if result.get("code"):
-                code = result.get("code", "")
+
+            status = result.get("status")
+            status_name = status.get("name") if isinstance(status, dict) else status
+
+            if result.get("sms_code") not in (None, ""):
+                code = str(result.get("sms_code"))
                 break
-            if result.get("status") not in ("waiting", "wait_code", "", None):
+            if status_name not in ("waiting", "wait_code", "", None):
                 break
     except Exception as exc:
         logger.warning("SMS code polling task crashed (order #%s): %s", order_id, exc)
