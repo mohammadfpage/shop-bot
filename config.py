@@ -20,7 +20,7 @@ def _parse_admin_ids() -> list[int]:
 class Config:
     # ─── Bot ────────────────────────────────────────────────────────────
     # BOT_TOKEN: str = '8494498767:AAEfmbtnX89gngZbWPjkb3mMaTFfwVhphwY'
-
+    
     # darkan
     BOT_TOKEN: str = '8494498767:AAEfmbtnX89gngZbWPjkb3mMaTFfwVhphwY'
     # ─── Admin (read from ADMIN_IDS env var, comma-separated) ───────────
